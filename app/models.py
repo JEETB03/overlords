@@ -124,13 +124,17 @@ class GeofenceCreate(BaseModel):
     lane_spacing_meters: float = 25.0
     altitude_meters: float = 65.0
     heading_angle_deg: float = 0.0
+    uav_start: Optional[List[float]] = None  # [lat, lon]
+    ugv_start: Optional[List[float]] = None  # [lat, lon]
 
 class TraversalWaypoint(BaseModel):
     id: int
     lat: float
     lng: float
     alt: float
-    action: str = "WAYPOINT"  # "TAKEOFF", "WAYPOINT", "RTL", "LOITER"
+    action: str = "WAYPOINT"  # "TRANSIT", "SURVEY", "PATROL", "WAYPOINT"
+    drone_type: str = "UAV"   # "UAV" or "UGV"
+    description: Optional[str] = None
 
 class GeofenceResponse(BaseModel):
     id: str

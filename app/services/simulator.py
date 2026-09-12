@@ -62,6 +62,8 @@ class AutonomousDroneSimulator:
         # Active Mission Waypoints
         self.waypoints: List[Dict[str, Any]] = []
         self.current_wp_idx = 0
+        self.ugv_waypoints: List[Dict[str, Any]] = []
+        self.current_ugv_wp_idx = 0
         self.active_polygon: Optional[List[List[float]]] = None
 
         # Home location for RTL
@@ -92,13 +94,24 @@ class AutonomousDroneSimulator:
             except Exception as e:
                 logger.error(f"Error emitting alert: {e}")
 
-    def set_mission(self, polygon: List[List[float]], waypoints: List[Dict[str, Any]]):
-        """Loads a generated traversal mission into the UAV autopilot."""
+    def set_mission(
+        self,
+        polygon: List[List[float]],
+        uav_waypoints: List[Dict[str, Any]],
+        ugv_waypoints: Optional[List[Dict[str, Any]]] = None
+    ):
+        """Loads a generated traversal mission into both UAV and UGV autopilots."""
         self.active_polygon = polygon
-        self.waypoints = waypoints
+        self.waypoints = uav_waypoints
         self.current_wp_idx = 0
         self.uav["mode"] = "TRAVERSING"
-        logger.info(f"Loaded {len(waypoints)} waypoints into UAV autopilot.")
+        logger.info(f"Loaded {len(uav_waypoints)} waypoints into UAV autopilot.")
+
+        if ugv_waypoints:
+            self.ugv_waypoints = ugv_waypoints
+            self.current_ugv_wp_idx = 0
+            self.ugv["mode"] = "TRAVERSING"
+            logger.info(f"Loaded {len(ugv_waypoints)} perimeter waypoints into UGV autopilot.")
 
     async def start(self):
         if self.is_running:
@@ -114,7 +127,6 @@ class AutonomousDroneSimulator:
 
     async def _simulation_loop(self):
         dt = 0.2  # 5 Hz simulation update rate
-        ugv_angle = 0.0
 
         while self.is_running:
             try:
@@ -128,15 +140,19 @@ class AutonomousDroneSimulator:
                     d_lon = t_lon - self.uav["lon"]
                     dist = haversine_distance_meters(self.uav["lat"], self.uav["lon"], t_lat, t_lon)
 
-                    # Update heading
+                    # Update heading smoothly
                     target_heading = math.degrees(math.atan2(d_lon, d_lat))
                     self.uav["heading"] = (self.uav["heading"] * 0.8 + target_heading * 0.2) % 360
 
                     # Move UAV towards target
                     step_meters = self.uav["speed"] * dt
                     if dist <= max(step_meters, 3.0):
-                        # Reached waypoint
-                        self.current_wp_idx = (self.current_wp_idx + 1) % len(self.waypoints)
+                        # Reached waypoint -> advance to next
+                        next_idx = self.current_wp_idx + 1
+                        if next_idx >= len(self.waypoints):
+                            # Loop interior survey grid (skipping initial transit leg)
+                            next_idx = 1 if len(self.waypoints) > 1 else 0
+                        self.current_wp_idx = next_idx
                     else:
                         frac = step_meters / dist
                         self.uav["lat"] += d_lat * frac
@@ -186,15 +202,38 @@ class AutonomousDroneSimulator:
                 # Battery drain
                 self.uav["battery"] = max(5.0, self.uav["battery"] - 0.003)
 
-                # 2. Update UGV Dynamics (Patrol ground perimeter)
-                ugv_angle += 0.015
-                radius = 0.0006
-                self.ugv["lat"] = settings.DEFAULT_LAT - 0.0004 + math.sin(ugv_angle) * radius
-                self.ugv["lon"] = settings.DEFAULT_LON + 0.0006 + math.cos(ugv_angle) * (radius * 1.3)
-                self.ugv["heading"] = (math.degrees(ugv_angle) + 90.0) % 360
-                self.ugv["speed"] = 3.5 + math.sin(ugv_angle * 3) * 0.5
-                self.ugv["obstacle_distance"] = 4.0 + math.sin(ugv_angle * 4) * 2.5
-                self.ugv["motor_temp"] = 40.0 + math.sin(ugv_angle) * 3.5
+                # 2. Update UGV Dynamics (Navigates to and patrols newly plotted geofence perimeter)
+                if self.ugv["mode"] in ["TRAVERSING", "PATROL"] and self.ugv_waypoints:
+                    target_wp = self.ugv_waypoints[self.current_ugv_wp_idx]
+                    t_lat, t_lon = target_wp["lat"], target_wp["lng"]
+                    d_lat = t_lat - self.ugv["lat"]
+                    d_lon = t_lon - self.ugv["lon"]
+                    dist = haversine_distance_meters(self.ugv["lat"], self.ugv["lon"], t_lat, t_lon)
+
+                    target_heading = math.degrees(math.atan2(d_lon, d_lat))
+                    self.ugv["heading"] = (self.ugv["heading"] * 0.75 + target_heading * 0.25) % 360
+
+                    step_meters = self.ugv["speed"] * dt
+                    if dist <= max(step_meters, 2.5):
+                        # Reached perimeter waypoint
+                        next_idx = self.current_ugv_wp_idx + 1
+                        if next_idx >= len(self.ugv_waypoints):
+                            # Loop perimeter patrol (skipping initial transit leg)
+                            next_idx = 1 if len(self.ugv_waypoints) > 1 else 0
+                            self.ugv["mode"] = "PATROL"
+                        self.current_ugv_wp_idx = next_idx
+                    else:
+                        frac = step_meters / dist
+                        self.ugv["lat"] += d_lat * frac
+                        self.ugv["lon"] += d_lon * frac
+
+                    self.ugv["obstacle_distance"] = 4.0 + math.sin(time.time() * 0.5) * 2.0
+                    self.ugv["motor_temp"] = min(55.0, 38.0 + (self.ugv["speed"] * 1.5))
+                else:
+                    # Loiter gently around current spot
+                    self.ugv["lat"] += math.cos(time.time() * 0.2) * 0.000001
+                    self.ugv["lon"] += math.sin(time.time() * 0.2) * 0.000001
+
                 self.ugv["battery"] = max(8.0, self.ugv["battery"] - 0.002)
 
                 # Broadcast Telemetry

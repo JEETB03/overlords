@@ -1,7 +1,8 @@
 /**
- * OVERLORD TACTICAL MAP & GEOFENCE CONTROLLER
- * Uses Leaflet.js for interactive tactical mapping, polygon drawing,
- * boustrophedon waypoint visualization, and live drone tracking.
+ * OVERLORD TACTICAL MAP & DUAL DRONE GEOFENCE CONTROLLER
+ * Handles high-res satellite mapping, geofence polygon drawing,
+ * and autonomous deployment & traversal planning for both UAV and UGV
+ * starting from their last known locations to the newly plotted geofence.
  */
 
 class TacticalMap {
@@ -18,6 +19,10 @@ class TacticalMap {
     this.uavHistory = [];
     this.ugvHistory = [];
     
+    // Last Known Drone Positions
+    this.lastUavPos = [this.initialLat, this.initialLon];
+    this.lastUgvPos = [this.initialLat - 0.00045, this.initialLon + 0.00060];
+
     // Geofence Drawing State
     this.isDrawing = false;
     this.drawPoints = [];
@@ -28,7 +33,8 @@ class TacticalMap {
     this.detectionsLayerGroup = null;
 
     this.currentPolygon = [];
-    this.currentWaypoints = [];
+    this.currentUavWaypoints = [];
+    this.currentUgvWaypoints = [];
   }
 
   init() {
@@ -101,7 +107,6 @@ class TacticalMap {
   }
 
   initDroneMarkers() {
-    // Custom Tactical UAV Icon
     const uavIcon = L.divIcon({
       className: 'drone-icon-container',
       html: `
@@ -119,7 +124,6 @@ class TacticalMap {
       iconAnchor: [18, 18]
     });
 
-    // Custom Tactical UGV Icon
     const ugvIcon = L.divIcon({
       className: 'drone-icon-container',
       html: `
@@ -146,6 +150,7 @@ class TacticalMap {
   updatePositions(uavData, ugvData) {
     if (uavData && uavData.lat && uavData.lon) {
       const uavPos = [uavData.lat, uavData.lon];
+      this.lastUavPos = uavPos;
       this.uavMarker.setLatLng(uavPos);
       
       const uavEl = document.getElementById('uav-hud-icon');
@@ -160,6 +165,7 @@ class TacticalMap {
 
     if (ugvData && ugvData.lat && ugvData.lon) {
       const ugvPos = [ugvData.lat, ugvData.lon];
+      this.lastUgvPos = ugvPos;
       this.ugvMarker.setLatLng(ugvPos);
 
       const ugvEl = document.getElementById('ugv-hud-icon');
@@ -179,9 +185,12 @@ class TacticalMap {
     this.drawPoints = [];
     this.clearDrawGraphics();
     
-    document.getElementById('btn-draw-geofence').classList.add('btn-amber');
-    document.getElementById('btn-draw-geofence').innerHTML = '<span class="status-dot amber pulse"></span> Click Map to Draw (3+ pts)';
-    document.getElementById('map-status-text').innerText = 'DRAW MODE: Click on map to add boundary vertices. Double-click or click "Finish" to complete.';
+    const btnDraw = document.getElementById('btn-draw-geofence');
+    if (btnDraw) {
+      btnDraw.classList.add('btn-amber');
+      btnDraw.innerHTML = '<span class="status-dot amber pulse"></span> Click Map to Draw (3+ pts)';
+    }
+    document.getElementById('map-status-text').innerText = 'DRAW MODE: Click on map to add boundary vertices. Double-click or click "Close Polygon" to complete.';
   }
 
   onMapClick(e) {
@@ -191,7 +200,6 @@ class TacticalMap {
     const lng = e.latlng.lng;
     this.drawPoints.push([lat, lng]);
 
-    // Add visible vertex point
     const vertexMarker = L.circleMarker([lat, lng], {
       radius: 5,
       color: '#ffb800',
@@ -200,7 +208,6 @@ class TacticalMap {
     }).addTo(this.map);
     this.drawTempMarkers.push(vertexMarker);
 
-    // Update draw polyline
     if (!this.drawPolyline) {
       this.drawPolyline = L.polyline(this.drawPoints, {
         color: '#ffb800',
@@ -227,13 +234,17 @@ class TacticalMap {
     this.renderPolygonGeofence(this.currentPolygon);
     this.clearDrawGraphics();
 
-    document.getElementById('btn-draw-geofence').classList.remove('btn-amber');
-    document.getElementById('btn-draw-geofence').innerHTML = 'Draw Geofence';
+    const btnDraw = document.getElementById('btn-draw-geofence');
+    if (btnDraw) {
+      btnDraw.classList.remove('btn-amber');
+      btnDraw.innerHTML = 'Plot Geofence';
+    }
     document.getElementById('btn-finish-geofence').style.display = 'none';
     document.getElementById('btn-gen-path').style.display = 'inline-flex';
     document.getElementById('btn-deploy-mission').style.display = 'inline-flex';
 
-    document.getElementById('map-status-text').innerText = `Geofence defined (${this.currentPolygon.length} vertices). Ready to calculate traversal path.`;
+    document.getElementById('map-status-text').innerText = 
+      `Geofence defined (${this.currentPolygon.length} vertices). Ready to plan UAV & UGV deployment from last known locations.`;
   }
 
   clearDrawGraphics() {
@@ -258,7 +269,7 @@ class TacticalMap {
       dashArray: '6, 6'
     }).addTo(this.map);
 
-    this.map.fitBounds(this.activeGeofenceLayer.getBounds(), { padding: [40, 40] });
+    this.map.fitBounds(this.activeGeofenceLayer.getBounds(), { padding: [50, 50] });
   }
 
   async generateTraversalPath() {
@@ -275,48 +286,120 @@ class TacticalMap {
           name: "Zone Alpha",
           polygon: this.currentPolygon,
           lane_spacing_meters: 25.0,
-          altitude_meters: 65.0
+          altitude_meters: 65.0,
+          uav_start: this.lastUavPos,
+          ugv_start: this.lastUgvPos
         })
       });
 
       const data = await resp.json();
       if (data.status === "SUCCESS") {
-        this.currentWaypoints = data.waypoints;
-        this.renderWaypoints(data.waypoints);
+        this.currentUavWaypoints = data.uav_waypoints || [];
+        this.currentUgvWaypoints = data.ugv_waypoints || [];
+        
+        this.renderDualMissions(
+          this.currentUavWaypoints,
+          this.currentUgvWaypoints,
+          data.uav_meta,
+          data.ugv_meta,
+          this.lastUavPos,
+          this.lastUgvPos
+        );
         
         document.getElementById('map-status-text').innerText = 
-          `Lawnmower Path: ${data.waypoints_count} waypoints | Total: ${data.total_distance_meters}m | Est: ${data.estimated_duration_sec}s (${data.area_hectares} ha)`;
+          `DEPLOYMENT PLANNED: UAV Ingress: ${data.uav_meta?.transit_distance_m || 0}m + ${data.uav_waypoints_count} Grid WPs | UGV Ingress: ${data.ugv_meta?.transit_distance_m || 0}m + ${data.ugv_waypoints_count} Perimeter WPs (${data.area_hectares} ha)`;
       }
     } catch (err) {
       console.error("Path generation error:", err);
     }
   }
 
-  renderWaypoints(waypoints) {
+  renderDualMissions(uavWps, ugvWps, uavMeta, ugvMeta, uavStart, ugvStart) {
     this.waypointsLayerGroup.clearLayers();
-    if (!waypoints || waypoints.length === 0) return;
 
-    const latlngs = waypoints.map(wp => [wp.lat, wp.lng]);
+    // 1. RENDER UAV MISSION
+    if (uavWps && uavWps.length > 0) {
+      // Ingress / Transit Leg from last known UAV position to entry waypoint
+      const entryWp = uavWps[0];
+      if (uavStart) {
+        const uavTransitLine = L.polyline([uavStart, [entryWp.lat, entryWp.lng]], {
+          color: '#00f0ff',
+          weight: 2,
+          opacity: 0.9,
+          dashArray: '6, 6'
+        });
+        uavTransitLine.bindTooltip("UAV Transit / Ingress Leg", { sticky: true });
+        this.waypointsLayerGroup.addLayer(uavTransitLine);
+      }
 
-    // Glowing boustrophedon sweep line
-    const pathLine = L.polyline(latlngs, {
-      color: '#00f0ff',
-      weight: 2,
-      opacity: 0.85
-    });
-    this.waypointsLayerGroup.addLayer(pathLine);
-
-    // Waypoint markers with sequence numbering
-    waypoints.forEach((wp, idx) => {
-      const wpIcon = L.divIcon({
-        className: 'wp-node',
-        html: `<div style="width: 16px; height: 16px; border-radius: 50%; background: #080c14; border: 2px solid #00f0ff; color: #00f0ff; font-family: Orbitron; font-size: 8px; font-weight: bold; display: flex; align-items: center; justify-content: center;">${wp.id}</div>`,
-        iconSize: [16, 16],
-        iconAnchor: [8, 8]
+      // Interior Lawnmower Survey Grid
+      const surveyCoords = uavWps.map(wp => [wp.lat, wp.lng]);
+      const uavPathLine = L.polyline(surveyCoords, {
+        color: '#00f0ff',
+        weight: 2,
+        opacity: 0.85
       });
-      const marker = L.marker([wp.lat, wp.lng], { icon: wpIcon });
-      this.waypointsLayerGroup.addLayer(marker);
-    });
+      this.waypointsLayerGroup.addLayer(uavPathLine);
+
+      // UAV Waypoint Nodes
+      uavWps.forEach((wp) => {
+        const isTransit = wp.action === "TRANSIT";
+        const nodeColor = isTransit ? "#ffb800" : "#00f0ff";
+        const nodeText = isTransit ? "IN" : `U${wp.id}`;
+
+        const wpIcon = L.divIcon({
+          className: 'wp-node',
+          html: `<div style="width: 18px; height: 18px; border-radius: 50%; background: #080c14; border: 2px solid ${nodeColor}; color: ${nodeColor}; font-family: Orbitron; font-size: 8px; font-weight: bold; display: flex; align-items: center; justify-content: center; box-shadow: 0 0 6px ${nodeColor};">${nodeText}</div>`,
+          iconSize: [18, 18],
+          iconAnchor: [9, 9]
+        });
+        const marker = L.marker([wp.lat, wp.lng], { icon: wpIcon });
+        marker.bindTooltip(`UAV WP #${wp.id} [${wp.action}] - ${wp.description || ''}`);
+        this.waypointsLayerGroup.addLayer(marker);
+      });
+    }
+
+    // 2. RENDER UGV MISSION
+    if (ugvWps && ugvWps.length > 0) {
+      // Ingress / Transit Leg from last known UGV position to geofence perimeter
+      const ugvEntryWp = ugvWps[0];
+      if (ugvStart) {
+        const ugvTransitLine = L.polyline([ugvStart, [ugvEntryWp.lat, ugvEntryWp.lng]], {
+          color: '#00ff9d',
+          weight: 2,
+          opacity: 0.9,
+          dashArray: '5, 5'
+        });
+        ugvTransitLine.bindTooltip("UGV Transit / Ingress Leg", { sticky: true });
+        this.waypointsLayerGroup.addLayer(ugvTransitLine);
+      }
+
+      // Perimeter Patrol Loop
+      const ugvCoords = ugvWps.map(wp => [wp.lat, wp.lng]);
+      const ugvPathLine = L.polyline(ugvCoords, {
+        color: '#00ff9d',
+        weight: 2,
+        opacity: 0.75
+      });
+      this.waypointsLayerGroup.addLayer(ugvPathLine);
+
+      // UGV Waypoint Nodes
+      ugvWps.forEach((wp) => {
+        const isTransit = wp.action === "TRANSIT";
+        const nodeColor = isTransit ? "#ffb800" : "#00ff9d";
+        const nodeText = isTransit ? "IN" : `G${wp.id}`;
+
+        const wpIcon = L.divIcon({
+          className: 'wp-node',
+          html: `<div style="width: 18px; height: 18px; border-radius: 4px; background: #080c14; border: 2px solid ${nodeColor}; color: ${nodeColor}; font-family: Orbitron; font-size: 8px; font-weight: bold; display: flex; align-items: center; justify-content: center; box-shadow: 0 0 6px ${nodeColor};">${nodeText}</div>`,
+          iconSize: [18, 18],
+          iconAnchor: [9, 9]
+        });
+        const marker = L.marker([wp.lat, wp.lng], { icon: wpIcon });
+        marker.bindTooltip(`UGV WP #${wp.id} [${wp.action}] - ${wp.description || ''}`);
+        this.waypointsLayerGroup.addLayer(marker);
+      });
+    }
   }
 
   async deployMissionToDrone() {
@@ -333,15 +416,28 @@ class TacticalMap {
           name: "Zone Alpha",
           polygon: this.currentPolygon,
           lane_spacing_meters: 25.0,
-          altitude_meters: 65.0
+          altitude_meters: 65.0,
+          uav_start: this.lastUavPos,
+          ugv_start: this.lastUgvPos
         })
       });
 
       const data = await resp.json();
       if (data.status === "DISPATCHED") {
-        this.renderWaypoints(data.waypoints);
+        this.currentUavWaypoints = data.uav_waypoints || [];
+        this.currentUgvWaypoints = data.ugv_waypoints || [];
+        
+        this.renderDualMissions(
+          this.currentUavWaypoints,
+          this.currentUgvWaypoints,
+          data.uav_meta,
+          data.ugv_meta,
+          this.lastUavPos,
+          this.lastUgvPos
+        );
+
         document.getElementById('map-status-text').innerText = 
-          `AUTONOMOUS MISSION DISPATCHED! UAV-ALPHA traversing ${data.waypoints.length} waypoints.`;
+          `🚀 MISSIONS DISPATCHED! UAV-ALPHA & UGV-BRAVO actively navigating to and traversing the newly designated geofence!`;
       }
     } catch (err) {
       console.error("Mission dispatch error:", err);
@@ -355,9 +451,19 @@ class TacticalMap {
       if (data.active && data.polygon && data.polygon.length >= 3) {
         this.currentPolygon = data.polygon;
         this.renderPolygonGeofence(data.polygon);
-        if (data.waypoints && data.waypoints.length > 0) {
-          this.currentWaypoints = data.waypoints;
-          this.renderWaypoints(data.waypoints);
+        
+        this.currentUavWaypoints = data.uav_waypoints || data.waypoints || [];
+        this.currentUgvWaypoints = data.ugv_waypoints || [];
+        
+        if (this.currentUavWaypoints.length > 0 || this.currentUgvWaypoints.length > 0) {
+          this.renderDualMissions(
+            this.currentUavWaypoints,
+            this.currentUgvWaypoints,
+            null,
+            null,
+            this.lastUavPos,
+            this.lastUgvPos
+          );
         }
       }
     } catch (e) {
