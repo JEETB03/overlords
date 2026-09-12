@@ -81,6 +81,7 @@ class TacticalMap {
     // Layer Groups
     this.waypointsLayerGroup = L.layerGroup().addTo(this.map);
     this.detectionsLayerGroup = L.layerGroup().addTo(this.map);
+    this.loraTrackLayer = L.layerGroup().addTo(this.map);
 
     // Drone Trails
     this.uavTrail = L.polyline([], {
@@ -108,6 +109,9 @@ class TacticalMap {
 
     // Preload recorded detections onto map
     this.loadExistingDetections();
+
+    // Load LoRa drone reconnaissance survey flight trail
+    this.loadLoRaReconTrack();
   }
 
   initDroneMarkers() {
@@ -504,26 +508,46 @@ class TacticalMap {
       return;
     }
 
-    const isLifeSign = detection.target_type && (
+    const isLoraLink = detection.target_type === 'LORA_MISSION' || 
+                       detection.is_lora_link || 
+                       (detection.notes && detection.notes.includes('LoRa Link'));
+    const isLifeSign = !isLoraLink && detection.target_type && (
       detection.target_type.toUpperCase().includes("LIFE") || 
       detection.target_type.toUpperCase().includes("SURVIVOR")
     );
-    const color = isLifeSign ? "#00ff9d" : "#ff3366";
-    const label = isLifeSign ? "SURVIVOR (LIFE-SIGN)" : "CASUALTY (DEADBODY)";
-    const confPct = Math.round(Number(detection.confidence || 0.9) * 100);
+
+    let pinClass = "casualty";
+    let pinIcon = "⚠️";
+    let pinLabel = "CASUALTY";
+    let popupTag = "CASUALTY (DEADBODY)";
+    let confPct = Math.round(Number(detection.confidence || 0.9) * 100);
+
+    if (isLoraLink) {
+      pinClass = "lora-mission";
+      pinIcon = "🛰️";
+      pinLabel = "LORA-RX";
+      popupTag = "🛰️ LORA RECON SURVEY";
+      confPct = 100;
+    } else if (isLifeSign) {
+      pinClass = "life-sign";
+      pinIcon = "👤";
+      pinLabel = "LIFE-SIGN";
+      popupTag = "SURVIVOR (LIFE-SIGN)";
+    }
+
     const timeStr = detection.timestamp || (new Date().toISOString().replace('T', ' ').substring(0, 19) + " UTC");
-    const droneId = detection.drone_id || "UAV-ALPHA";
-    const loraRssi = (detection.lora_rssi !== undefined && detection.lora_rssi !== null) ? `${Number(detection.lora_rssi).toFixed(1)} dBm` : "-72.0 dBm";
+    const droneId = detection.drone_id || "DRONE-01";
+    const loraRssi = (detection.lora_rssi !== undefined && detection.lora_rssi !== null) ? `${Number(detection.lora_rssi).toFixed(1)} dBm` : "-68.0 dBm";
     const loraPackets = detection.lora_packets_received || detection.lora_packets || 8;
     const imgUrl = detection.image_url || `/api/snapshots/${detId}`;
 
     const pulseIcon = L.divIcon({
       className: 'tactical-marker-pin-wrap',
       html: `
-        <div class="tactical-marker-pin ${isLifeSign ? 'life-sign' : 'casualty'}">
+        <div class="tactical-marker-pin ${pinClass}">
           <div class="pin-pulse"></div>
-          <div class="pin-core">${isLifeSign ? '👤' : '⚠️'}</div>
-          <div class="pin-label">${isLifeSign ? 'LIFE-SIGN' : 'CASUALTY'}</div>
+          <div class="pin-core">${pinIcon}</div>
+          <div class="pin-label">${pinLabel}</div>
         </div>
       `,
       iconSize: [32, 45],
@@ -532,11 +556,17 @@ class TacticalMap {
 
     const marker = L.marker([lat, lon], { icon: pulseIcon });
 
+    let cameraName = "FLIR Optical";
+    if (detection.notes && detection.notes.includes("Camera:")) {
+      const cm = detection.notes.match(/Camera:\s*([^|]+)/);
+      if (cm) cameraName = cm[1].trim();
+    }
+
     const popupHtml = `
-      <div class="tactical-popup-box ${isLifeSign ? 'life-sign' : 'casualty'}">
+      <div class="tactical-popup-box ${pinClass}">
         <div class="popup-title-bar">
-          <span class="popup-tag">${label}</span>
-          <span class="popup-conf">${confPct}% CONF</span>
+          <span class="popup-tag">${popupTag}</span>
+          <span class="popup-conf">${confPct}% ${isLoraLink ? 'RAW RX' : 'CONF'}</span>
         </div>
         <div class="popup-snapshot-wrap" onclick="window.viewSnapshot('${detId}')" title="Click to view high-res picture">
           <img src="${imgUrl}" alt="Detection Snapshot" onerror="this.src='/static/img/placeholder.jpg'">
@@ -552,15 +582,15 @@ class TacticalMap {
             <span class="popup-v time">${timeStr}</span>
           </div>
           <div class="popup-row">
-            <span class="popup-k">LORA LINK:</span>
-            <span class="popup-v lora">${loraRssi} (${loraPackets} pkts)</span>
+            <span class="popup-k">${isLoraLink ? 'SENSOR / CAM:' : 'LORA LINK:'}</span>
+            <span class="popup-v ${isLoraLink ? '' : 'lora'}">${isLoraLink ? cameraName : loraRssi}</span>
           </div>
           <div class="popup-row">
             <span class="popup-k">PLATFORM:</span>
-            <span class="popup-v">${droneId}</span>
+            <span class="popup-v">${droneId} (${loraPackets} pkts)</span>
           </div>
         </div>
-        <button class="popup-inspect-btn ${isLifeSign ? 'btn-life' : 'btn-cas'}" onclick="window.viewSnapshot('${detId}')">
+        <button class="popup-inspect-btn ${pinClass}" onclick="window.viewSnapshot('${detId}')">
           INSPECT PICTURE & COORDS
         </button>
       </div>
@@ -603,6 +633,132 @@ class TacticalMap {
         animate: true,
         duration: 0.9
       });
+    }
+  }
+
+  async loadLoRaReconTrack() {
+    try {
+      const resp = await fetch('/api/lora-link/track');
+      if (!resp.ok) return;
+      const track = await resp.json();
+      if (!Array.isArray(track) || track.length === 0) return;
+
+      this.loraTrackLayer.clearLayers();
+
+      // Draw dashed trajectory connecting sequence of mission coordinates
+      if (track.length >= 2) {
+        const coords = track.map(p => [p.lat, p.lon]);
+        const poly = L.polyline(coords, {
+          color: '#00f0ff',
+          weight: 3,
+          opacity: 0.85,
+          dashArray: '6, 8',
+          lineJoin: 'round'
+        });
+        poly.bindTooltip("Autonomous LoRa Recon Corridor", { sticky: true });
+        this.loraTrackLayer.addLayer(poly);
+      }
+
+      // Add sequence nodes M1, M2, M3, M4...
+      track.forEach(p => {
+        const nodeIcon = L.divIcon({
+          className: 'lora-seq-pin-wrap',
+          html: `
+            <div class="lora-seq-pin">
+              <div class="seq-badge">${p.label}</div>
+              <div class="seq-dot"></div>
+            </div>
+          `,
+          iconSize: [28, 28],
+          iconAnchor: [14, 14]
+        });
+
+        const marker = L.marker([p.lat, p.lon], { icon: nodeIcon });
+        const timeFormatted = p.completed_at ? p.completed_at.replace('T', ' ') : '';
+        const popupHtml = `
+          <div class="tactical-popup-box lora-mission">
+            <div class="popup-title-bar">
+              <span class="popup-tag">🛰️ LORA WAYPOINT ${p.label}</span>
+              <span class="popup-conf">SEQ #${p.seq}</span>
+            </div>
+            <div class="popup-snapshot-wrap" onclick="window.viewSnapshot('${p.mission_id}')" title="Click to inspect picture">
+              <img src="${p.image_url}" alt="${p.mission_id}" onerror="this.src='/static/img/placeholder.jpg'">
+              <div class="popup-click-overlay">🔍 CLICK TO INSPECT PICTURE</div>
+            </div>
+            <div class="popup-data-table">
+              <div class="popup-row">
+                <span class="popup-k">MISSION ID:</span>
+                <span class="popup-v" style="font-size: 0.65rem; color: #a0aec0;">${p.mission_id}</span>
+              </div>
+              <div class="popup-row">
+                <span class="popup-k">COORDINATES:</span>
+                <span class="popup-v coords">${p.lat.toFixed(6)}°N, ${p.lon.toFixed(6)}°E</span>
+              </div>
+              <div class="popup-row">
+                <span class="popup-k">TIMESTAMP:</span>
+                <span class="popup-v time">${timeFormatted}</span>
+              </div>
+              <div class="popup-row">
+                <span class="popup-k">CAMERA / RES:</span>
+                <span class="popup-v">${p.camera} (${p.dimensions})</span>
+              </div>
+            </div>
+            <button class="popup-inspect-btn lora-mission" onclick="window.viewSnapshot('${p.mission_id}')">
+              INSPECT PICTURE & COORDS
+            </button>
+          </div>
+        `;
+        marker.bindPopup(popupHtml, { maxWidth: 290, className: 'tactical-leaflet-popup' });
+        this.loraTrackLayer.addLayer(marker);
+      });
+      this.loraTrackPoints = track;
+    } catch (e) {
+      console.warn("Could not load LoRa recon track:", e);
+    }
+  }
+
+  focusLoRaMissions() {
+    if (this.loraTrackPoints && this.loraTrackPoints.length > 0) {
+      const coords = this.loraTrackPoints.map(p => [p.lat, p.lon]);
+      const bounds = L.latLngBounds(coords);
+      this.map.fitBounds(bounds.pad(0.35), { animate: true, duration: 1.2 });
+      const latest = this.loraTrackPoints[this.loraTrackPoints.length - 1];
+      const stEl = document.getElementById('map-status-text');
+      if (stEl) {
+        stEl.innerText = `LORA RECON CORRIDOR: ${this.loraTrackPoints.length} survey missions plotted across Kolkata. Latest: ${latest.mission_id} (${latest.lat.toFixed(5)}°N, ${latest.lon.toFixed(5)}°E)`;
+      }
+      return;
+    }
+
+    const loraEntries = Object.values(this.detectionMarkers).filter(e => {
+      const d = e.data || {};
+      return d.target_type === 'LORA_MISSION' || d.is_lora_link || (d.notes && d.notes.includes('LoRa Link'));
+    });
+
+    if (loraEntries.length > 0) {
+      if (loraEntries.length === 1) {
+        const e = loraEntries[0];
+        this.map.flyTo([e.lat, e.lon], 17, { animate: true, duration: 1.1 });
+        setTimeout(() => e.marker.openPopup(), 550);
+      } else {
+        const group = L.featureGroup(loraEntries.map(e => e.marker));
+        this.map.fitBounds(group.getBounds().pad(0.35), { animate: true, duration: 1.1 });
+        setTimeout(() => loraEntries[0].marker.openPopup(), 600);
+      }
+      const stEl = document.getElementById('map-status-text');
+      if (stEl) {
+        stEl.innerText = `LORA LINK: Centered on ${loraEntries.length} active hardware mission landing zones.`;
+      }
+    } else {
+      // Jump to default LoRa Link survey region (Kolkata 22.5726, 88.3639)
+      this.map.flyTo([22.5726, 88.3639], 16, { animate: true, duration: 1.1 });
+      const stEl = document.getElementById('map-status-text');
+      if (stEl) {
+        stEl.innerText = `LORA LINK: Panned to LoRa survey deployment zone [22.5726°N, 88.3639°E]. Polling RX station...`;
+      }
+      if (window.detectionManager) {
+        window.detectionManager.syncLoRaLink();
+      }
     }
   }
 }

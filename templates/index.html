@@ -20,7 +20,8 @@
     window.OVERLORD_CONFIG = {
       defaultLat: {{ default_lat }},
       defaultLon: {{ default_lon }},
-      dbType: "{{ db_type }}"
+      dbType: "{{ db_type }}",
+      loraApiUrl: "{{ lora_api_url }}"
     };
   </script>
 </head>
@@ -68,6 +69,12 @@
         <span>LORA: {{ lora_freq }} MHz</span>
       </div>
 
+      <div id="lora-link-status-pill" class="status-pill" title="LoRa Link Hardware Station: {{ lora_api_url }}">
+        <span id="lora-link-dot" class="status-dot"></span>
+        <span>LORA RX:</span>
+        <span id="lora-link-text" style="color: var(--accent-cyan);">CHECKING</span>
+      </div>
+
       <div class="status-pill">
         <span class="status-dot"></span>
         <span>DB: {{ db_type }}</span>
@@ -79,6 +86,7 @@
     </div>
 
     <div class="header-actions">
+      <a href="/docs" target="_blank" class="btn-tac" style="text-decoration: none; display: inline-flex; align-items: center; gap: 4px;" title="Open Interactive OpenAPI Swagger Documentation">📖 API DOCS</a>
       <button id="btn-toggle-audio" class="btn-tac">AUDIO: ON</button>
       <button id="btn-uav-rtl" class="btn-tac btn-danger">EMERGENCY RTL</button>
     </div>
@@ -153,6 +161,10 @@
 
         <button id="btn-deploy-mission" class="btn-tac btn-amber" style="display: none;">
           🚀 Deploy UAV & UGV to Geofence
+        </button>
+
+        <button id="btn-focus-lora" class="btn-tac btn-cyan" title="Center map on received LoRa missions coordinates">
+          📍 Focus LoRa Missions
         </button>
       </div>
 
@@ -246,9 +258,18 @@
       </div>
 
       <!-- AI Target Detections Feed Header -->
-      <div class="panel-header" style="border-top: 1px solid var(--border-cyan); margin-top: auto;">
-        <span>AI TARGET SNAPSHOTS (LORA RECEIVED)</span>
-        <span style="font-size: 0.7rem; color: var(--accent-cyan);">DATABASE SYNC</span>
+      <div class="panel-header" style="border-top: 1px solid var(--border-cyan); margin-top: auto; display: flex; flex-direction: column; gap: 4px; padding-bottom: 4px;">
+        <div style="display: flex; align-items: center; justify-content: space-between; width: 100%;">
+          <span>AI & LORA RECON SNAPSHOTS</span>
+          <button id="btn-sync-lora-rx" class="btn-tac btn-cyan" style="padding: 2px 7px; font-size: 0.65rem;" title="Synchronize with LoRa Link Ground Station">
+            🔄 Sync RX
+          </button>
+        </div>
+        <div class="detections-filter-tabs">
+          <button class="filter-tab active" data-filter="all">ALL</button>
+          <button class="filter-tab" data-filter="lora">LORA LINK</button>
+          <button class="filter-tab" data-filter="sim">SIM AI</button>
+        </div>
       </div>
 
       <!-- Detections Stream Container -->
@@ -284,6 +305,9 @@
             </button>
             <button id="sim-btn-lora-burst" class="btn-tac">
               📡 LoRa Packet Burst Test
+            </button>
+            <button id="sim-btn-sync-lora" class="btn-tac btn-cyan" style="grid-column: span 2;">
+              🛰️ Sync LoRa Link Missions (172.16.59.210)
             </button>
           </div>
         </div>
@@ -332,8 +356,10 @@
           <div class="modal-detail-item"><strong style="color: var(--text-dim);">AI CONFIDENCE:</strong> <span id="modal-field-conf" style="color: #00ff9d; font-weight: bold;">--</span></div>
           <div class="modal-detail-item"><strong style="color: var(--text-dim);">SOURCE DRONE:</strong> <span id="modal-field-drone">--</span></div>
           <div class="modal-detail-item"><strong style="color: var(--text-dim);">LORA UPLINK:</strong> <span id="modal-field-lora">--</span></div>
+          <div class="modal-detail-item"><strong style="color: var(--text-dim);">SENSOR / CAM:</strong> <span id="modal-field-camera">--</span></div>
           <div class="modal-detail-item"><strong style="color: var(--text-dim);">TACTICAL STATUS:</strong> <span id="modal-field-status">--</span></div>
-          <div class="modal-detail-item" style="grid-column: 1 / -1;"><strong style="color: var(--text-dim);">TARGET ID:</strong> <span id="modal-field-id" style="font-size: 0.7rem; color: #8892b0;">--</span></div>
+          <div class="modal-detail-item" style="grid-column: 1 / -1;"><strong style="color: var(--text-dim);">TARGET / MISSION ID:</strong> <span id="modal-field-id" style="font-size: 0.72rem; color: #8892b0;">--</span></div>
+          <div class="modal-detail-item" style="grid-column: 1 / -1;"><strong style="color: var(--text-dim);">MISSION METADATA:</strong> <span id="modal-field-notes" style="font-size: 0.7rem; color: var(--accent-cyan);">--</span></div>
         </div>
       </div>
       <div class="modal-footer">

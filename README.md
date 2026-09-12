@@ -101,14 +101,59 @@ run.bat
 
 ---
 
-## API Endpoints Overview
-- `GET /`: Tactical C2 Web Dashboard
-- `GET /health`: System health and active links
-- `GET /api/stream/uav`: Live UAV MJPEG analog video stream
-- `GET /api/stream/ugv`: Live UGV MJPEG optical ground stream
-- `WS /api/telemetry/ws`: Real-time bi-directional telemetry and alert stream
-- `POST /api/geofence/generate-path`: Calculates lawnmower search waypoints
-- `POST /api/geofence/upload`: Dispatches autonomous mission to drone autopilot
-- `POST /api/simulation/trigger`: Injects tactical scenarios (`LIFE_SIGN`, `CASUALTY`, `BREACH`, etc.)
-- `POST /api/lora/rx`: Ingests raw LoRa packets from physical transceiver hardware
-- `GET /api/snapshots/{id}`: Returns high-res detection snapshot JPEG
+---
+
+## API Endpoints & Architecture Overview
+
+The system features interactive OpenAPI Swagger documentation accessible at **`http://localhost:8000/docs`** and ReDoc at **`http://localhost:8000/redoc`**.
+
+### 1. External LoRa Link RX Station API (`http://172.16.59.210:8000`)
+The tactical dashboard integrates with an external LoRa RX ground station that receives progressive image packets transmitted over long-range radio:
+
+| Remote Endpoint | Method | Description |
+|---|---|---|
+| `/health` | `GET` | RX station status, storage root (`E:\HH4.0\docs\received`), and state file check. |
+| `/missions` | `GET` | Lists completed survey missions with query params `limit` (int, default 50) and `order` (`desc` or `asc`). |
+| `/missions/latest` | `GET` | Returns full detail and telemetry of the most recently reassembled aerial mission. |
+| `/missions/{mission_id}` | `GET` | Detailed metadata and file download paths for a specific mission ID. |
+| `/missions/{mission_id}/metadata` | `GET` | Raw JSON telemetry payload (lat/lon coordinates, camera type, operator, drone ID). |
+| `/missions/{mission_id}/image` | `GET` | Binary JPEG/PNG byte stream of the reconstructed aerial survey snapshot. |
+
+### 2. Local Tactical C2 & LoRa Link Proxy Endpoints (`/api/lora-link`)
+The C2 dashboard runs an autonomous background synchronization service (`app/services/lora_link_service.py`) that polls the hardware RX ground station, downloads reconstructed imagery to local storage (`storage/snapshots/`), ingests mission telemetry into the database, and renders the sequential reconnaissance corridor:
+
+- `GET /api/lora-link/status`: Connectivity state, sync count, base URL, and health diagnostics.
+- `GET /api/lora-link/missions`: Lists downlinked missions (`limit: int = 50`, `order: str = "desc"`).
+- `GET /api/lora-link/missions/latest`: Most recently completed survey mission with embedded telemetry.
+- `GET /api/lora-link/missions/{mission_id}`: Full mission details, image size, and coordinate metadata.
+- `GET /api/lora-link/missions/{mission_id}/metadata`: Raw metadata JSON payload.
+- `GET /api/lora-link/track`: Returns chronologically ordered GPS flight corridor waypoints (`M1`, `M2`, `M3`, ...) for mapping the UAV trajectory.
+- `GET /api/lora-link/image/{mission_id}`: High-resolution reconstructed survey photo (cached locally with fallback to remote download).
+- `POST /api/lora-link/sync`: Manually triggers an immediate pull from the RX ground station and broadcasts WebSocket tactical alerts.
+
+### 3. Core Tactical C2 Endpoints
+- `GET /`: Tactical Command and Control Web Dashboard UI.
+- `GET /health`: C2 system health, active database type (PostgreSQL / SQLite fallback), and fleet operational modes.
+- `GET /api/stream/uav`: Live UAV FLIR IR thermal analog video stream (MJPEG with dynamic HUD pitch ladder and RF noise).
+- `GET /api/stream/ugv`: Live UGV optical rover video stream with LiDAR collision alerts.
+- `WS /api/telemetry/ws`: High-rate (5Hz) bi-directional WebSocket telemetry stream for coordinates, compass heading, battery voltage, and mission alerts.
+- `POST /api/geofence/generate-path`: Computes boustrophedon (lawnmower) autonomous search waypoints and estimated flight duration.
+- `POST /api/geofence/upload`: Uploads planned polygon waypoints directly to the UAV autopilot.
+- `GET /api/detections`: Lists all target detections with filtering (`ALL`, `LORA_MISSION`, `SURVIVOR`, `CASUALTY`).
+- `GET /api/snapshots/{id}`: Returns JPEG image bytes for any AI detection or LoRa Link mission.
+- `POST /api/simulation/trigger`: Injects tactical training events (`LIFE_SIGN`, `CASUALTY`, `GEOFENCE_BREACH`, `LOW_BATTERY`).
+- `POST /api/lora/rx`: Ingests raw serial radio packet chunks from physical SX1262 transceiver hardware.
+
+---
+
+## Active LoRa Link Reconnaissance Missions
+
+| Waypoint | Mission ID | Coordinates | Camera | Status | Resolution | Size |
+|---|---|---|---|---|---|---|
+| **M1** | `LL-20260913-005138-6F8E` | `22.572600°N, 88.363900°E` | RunCam | Cached | 1024x1024 | 111 KB |
+| **M2** | `LL-20260912-235309-8E38` | `22.572600°N, 88.363900°E` | RunCam | Cached | 877x620 | 69 KB |
+| **M3** | `LL-20260913-025254-78E4` | `22.560047°N, 88.355082°E` | RunCam | Cached | 1024x1024 | 82 KB |
+| **M4** | `LL-20260913-025953-11E1` | `22.584270°N, 88.362341°E` | RunCam | Cached | 1024x1024 | 97 KB |
+
+*The dashboard draws an interconnected cyan flight corridor connecting waypoints M1 through M4, providing instant visual confirmation of autonomous survey coverage.*
+

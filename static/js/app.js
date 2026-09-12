@@ -50,6 +50,15 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
+  const btnFocusLora = document.getElementById('btn-focus-lora');
+  if (btnFocusLora) {
+    btnFocusLora.addEventListener('click', () => {
+      if (window.tacticalMap) {
+        window.tacticalMap.focusLoRaMissions();
+      }
+    });
+  }
+
   // 4. Bind Scenario Simulation Buttons
   bindScenarioButton('sim-btn-life-sign', 'LIFE_SIGN');
   bindScenarioButton('sim-btn-casualty', 'CASUALTY');

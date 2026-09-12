@@ -35,6 +35,11 @@ class Settings(BaseSettings):
     LORA_BAUD_RATE: int = 115200
     LORA_SIMULATION_MODE: bool = True    # Auto-fallback to simulation if no hardware port
     
+    # External Hardware LoRa Link API (Ground Station RX API)
+    LORA_API_BASE_URL: str = os.getenv("LORA_API_BASE_URL", "http://172.16.59.210:8000")
+    LORA_API_SYNC_INTERVAL: float = float(os.getenv("LORA_API_SYNC_INTERVAL", "4.0"))  # seconds
+    LORA_API_AUTO_SYNC: bool = True
+    
     # Drones Initial Reference Coordinates (Tactical Command Zone)
     DEFAULT_LAT: float = 28.613939
     DEFAULT_LON: float = 77.209021

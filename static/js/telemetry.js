@@ -186,6 +186,9 @@ class TelemetryManager {
       // Pop up on map with marker, centering, and open popup
       if (window.tacticalMap && alert.data.lat && alert.data.lon) {
         window.tacticalMap.addDetectionMarker(alert.data, true);
+        if (window.tacticalMap.loadLoRaReconTrack) {
+          window.tacticalMap.loadLoRaReconTrack();
+        }
       }
 
       // Pop up on alerts (interactive tactical toast on dashboard UI)
@@ -204,23 +207,41 @@ class TelemetryManager {
 
     const d = alert.data || {};
     const detId = d.id || d.detection_id || ('det_' + Date.now());
-    const isLifeSign = (
+    const isLoraLink = (
+      (alert.title && alert.title.includes("LORA")) ||
+      (d.target_type && d.target_type.includes("LORA")) ||
+      d.is_lora_link
+    );
+    const isLifeSign = !isLoraLink && (
       (alert.title && alert.title.includes("LIFE")) ||
       (d.target_type && d.target_type.toUpperCase().includes("LIFE")) ||
       (d.target_type && d.target_type.toUpperCase().includes("SURVIVOR"))
     );
 
-    const badgeText = isLifeSign ? "SURVIVOR (LIFE-SIGN)" : "CASUALTY (DEADBODY)";
+    let toastClass = "toast-casualty";
+    let badgeText = "CASUALTY (DEADBODY)";
+    let confText = `${confPct}% AI`;
+
+    if (isLoraLink) {
+      toastClass = "toast-lora";
+      badgeText = "🛰️ LORA RX MISSION ACQUIRED";
+      confText = "RAW RX";
+    } else if (isLifeSign) {
+      toastClass = "toast-life";
+      badgeText = "SURVIVOR (LIFE-SIGN)";
+      confText = `${confPct}% AI`;
+    }
+
     const lat = Number(d.latitude || d.lat || 0);
     const lon = Number(d.longitude || d.lon || 0);
     const timeStr = d.timestamp || alert.timestamp || (new Date().toISOString().replace('T', ' ').substring(0, 19) + " UTC");
     const confPct = Math.round(Number(d.confidence || 0.92) * 100);
     const imgUrl = d.image_url || `/api/snapshots/${detId}`;
-    const droneId = d.drone_id || alert.drone_id || "UAV-ALPHA";
-    const loraRssi = (d.lora_rssi !== undefined && d.lora_rssi !== null) ? `${Number(d.lora_rssi).toFixed(1)} dBm` : "-72.0 dBm";
+    const droneId = d.drone_id || alert.drone_id || "DRONE-01";
+    const loraRssi = (d.lora_rssi !== undefined && d.lora_rssi !== null) ? `${Number(d.lora_rssi).toFixed(1)} dBm` : "-68.0 dBm";
 
     const toast = document.createElement('div');
-    toast.className = `detection-toast ${isLifeSign ? 'toast-life' : 'toast-casualty'}`;
+    toast.className = `detection-toast ${toastClass}`;
     toast.id = `toast-${detId}`;
 
     toast.innerHTML = `
@@ -230,7 +251,7 @@ class TelemetryManager {
           <div class="toast-tag-group">
             <span class="toast-pulse-dot"></span>
             <span class="toast-title">${badgeText}</span>
-            <span class="toast-conf">${confPct}% AI</span>
+            <span class="toast-conf">${confText}</span>
           </div>
           <button class="toast-close-btn" title="Dismiss">✕</button>
         </div>

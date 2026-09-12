@@ -28,9 +28,15 @@ async def list_detections(limit: int = 50):
     out = []
     for r in records:
         ts_str = r.timestamp.strftime("%Y-%m-%d %H:%M:%S UTC") if r.timestamp else ""
+        mission_id = None
+        if r.notes and "LoRa Link Mission:" in r.notes:
+            m = r.notes.split("LoRa Link Mission:")[1].split("|")[0].strip()
+            mission_id = m
+
         out.append({
             "id": r.id,
             "detection_id": r.id,
+            "mission_id": mission_id,
             "timestamp": ts_str,
             "drone_id": r.drone_id,
             "drone_type": r.drone_type,
@@ -41,6 +47,7 @@ async def list_detections(limit: int = 50):
             "lat": r.latitude,
             "lon": r.longitude,
             "altitude": r.altitude,
+            "image_filename": r.image_filename,
             "image_url": f"/api/snapshots/{r.id}" if r.image_filename else None,
             "thumbnail_b64": r.thumbnail_b64[:100] + "..." if r.thumbnail_b64 else None,
             "lora_rssi": r.lora_rssi,
@@ -58,9 +65,15 @@ async def get_detection(detection_id: str):
     if not r:
         raise HTTPException(status_code=404, detail="Detection not found")
     ts_str = r.timestamp.strftime("%Y-%m-%d %H:%M:%S UTC") if r.timestamp else ""
+    mission_id = None
+    if r.notes and "LoRa Link Mission:" in r.notes:
+        m = r.notes.split("LoRa Link Mission:")[1].split("|")[0].strip()
+        mission_id = m
+
     return {
         "id": r.id,
         "detection_id": r.id,
+        "mission_id": mission_id,
         "timestamp": ts_str,
         "drone_id": r.drone_id,
         "drone_type": r.drone_type,
@@ -71,6 +84,7 @@ async def get_detection(detection_id: str):
         "lat": r.latitude,
         "lon": r.longitude,
         "altitude": r.altitude,
+        "image_filename": r.image_filename,
         "image_url": f"/api/snapshots/{r.id}" if r.image_filename else None,
         "lora_rssi": r.lora_rssi,
         "lora_snr": r.lora_snr,
