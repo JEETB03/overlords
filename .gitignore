@@ -48,3 +48,11 @@ storage/snapshots/*
 *.swo
 .DS_Store
 Thumbs.db
+
+# ML Pipeline
+ml/data/
+*.pt
+*.pth
+ml/__pycache__/
+ml/.venv/
+

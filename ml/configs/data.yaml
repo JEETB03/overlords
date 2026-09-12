@@ -1,0 +1,9 @@
+path: .
+train: images/train
+val: images/val
+test: images/test
+names:
+  0: person
+  1: fire
+  2: smoke
+  3: vehicle
