@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OVERLORD // Autonomous Drone C2 Dashboard</title>
+  
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Orbitron:wght@500;700;900&display=swap" rel="stylesheet">
+  
+  <!-- Leaflet CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+  
+  <!-- Custom Styles -->
+  <link rel="stylesheet" href="/static/css/dashboard.css">
+
+  <script>
+    window.OVERLORD_CONFIG = {
+      defaultLat: {{ default_lat }},
+      defaultLon: {{ default_lon }},
+      dbType: "{{ db_type }}"
+    };
+  </script>
+</head>
+<body>
+
+  <!-- TOP HEADER -->
+  <header class="c2-header">
+    <div class="brand-section">
+      <div class="brand-logo">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polygon points="12 2 2 7 12 12 22 7 12 2"></polygon>
+          <polyline points="2 17 12 22 22 17"></polyline>
+          <polyline points="2 12 12 17 22 12"></polyline>
+        </svg>
+        OVERLORD C2
+      </div>
+      <span class="brand-badge">AUTONOMOUS FLEET</span>
+    </div>
+
+    <div class="header-status-group">
+      <div class="status-pill">
+        <span id="ws-status-dot" class="status-dot pulse"></span>
+        <span id="ws-status-text">CONNECTING...</span>
+      </div>
+
+      <div class="status-pill">
+        <span class="status-dot"></span>
+        <span>UAV-ALPHA:</span>
+        <span id="uav-mode-badge" style="color: var(--accent-cyan);">LOITER</span>
+      </div>
+
+      <div class="status-pill">
+        <span class="status-dot"></span>
+        <span>UGV-BRAVO:</span>
+        <span id="ugv-mode-badge" style="color: var(--accent-green);">PATROL</span>
+      </div>
+
+      <div id="geofence-status-pill" class="status-pill">
+        <span class="status-dot"></span>
+        <span>GEOFENCE: READY</span>
+      </div>
+
+      <div class="status-pill">
+        <span class="status-dot amber"></span>
+        <span>LORA: {{ lora_freq }} MHz</span>
+      </div>
+
+      <div class="status-pill">
+        <span class="status-dot"></span>
+        <span>DB: {{ db_type }}</span>
+      </div>
+
+      <div class="status-pill" style="min-width: 90px; text-align: center;">
+        <span id="mission-clock" style="color: var(--accent-cyan); font-weight: 700;">--:--:-- UTC</span>
+      </div>
+    </div>
+
+    <div class="header-actions">
+      <button id="btn-toggle-audio" class="btn-tac">AUDIO: ON</button>
+      <button id="btn-uav-rtl" class="btn-tac btn-danger">EMERGENCY RTL</button>
+    </div>
+  </header>
+
+  <!-- MAIN DASHBOARD CONTENT -->
+  <main class="dashboard-grid">
+
+    <!-- LEFT COLUMN: DUAL ANALOG VIDEO FEEDS -->
+    <section class="left-feeds-col tac-panel">
+      <!-- UAV Video Card -->
+      <div class="feed-card">
+        <div class="feed-header">
+          <div style="display: flex; align-items: center; gap: 6px;">
+            <span class="status-dot red pulse"></span>
+            <span>UAV-ALPHA // 5.8GHz ANALOG FEED</span>
+          </div>
+          <span style="color: var(--accent-amber);">LIVE FLIR IR</span>
+        </div>
+        <div class="feed-viewport">
+          <img id="uav-stream-feed" class="stream-img" src="/api/stream/uav" alt="UAV Analog Video Feed">
+          <div class="feed-crt-overlay"></div>
+          <div class="feed-controls">
+            <div class="noise-slider-group">
+              <span>RF NOISE</span>
+              <input type="range" id="uav-noise-slider" min="0.0" max="0.9" step="0.05" value="0.12">
+            </div>
+            <button id="btn-toggle-thermal" class="btn-tac" style="padding: 2px 6px; font-size: 0.65rem;">THERMAL PALETTE</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- UGV Video Card -->
+      <div class="feed-card">
+        <div class="feed-header">
+          <div style="display: flex; align-items: center; gap: 6px;">
+            <span class="status-dot pulse"></span>
+            <span>UGV-BRAVO // BUMPER OPTICAL FEED</span>
+          </div>
+          <span style="color: var(--accent-green);">LIDAR RADAR</span>
+        </div>
+        <div class="feed-viewport">
+          <img id="ugv-stream-feed" class="stream-img" src="/api/stream/ugv" alt="UGV Ground Rover Feed">
+          <div class="feed-crt-overlay"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- CENTER COLUMN: TACTICAL MAP & GEOFENCE CONTROLLER -->
+    <section class="center-map-col tac-panel">
+      <div class="panel-header">
+        <span>TACTICAL SITUATION MAP // GEOFENCING & WAYPOINT TRAVERSAL</span>
+        <span style="font-size: 0.7rem; color: var(--text-muted);">PROJECTION: WGS84</span>
+      </div>
+
+      <!-- Floating Map Toolbar -->
+      <div class="map-floating-bar">
+        <button id="btn-draw-geofence" class="btn-tac">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polygon points="12 2 22 8.5 22 15.5 12 22 2 15.5 2 8.5 12 2"></polygon>
+          </svg>
+          Plot Geofence
+        </button>
+
+        <button id="btn-finish-geofence" class="btn-tac btn-success" style="display: none;">
+          ✓ Close Polygon
+        </button>
+
+        <button id="btn-gen-path" class="btn-tac" style="display: none;">
+          ⚡ Generate Traversal Path
+        </button>
+
+        <button id="btn-deploy-mission" class="btn-tac btn-amber" style="display: none;">
+          🚀 Deploy to UAV Autopilot
+        </button>
+      </div>
+
+      <!-- Map Viewport -->
+      <div id="tactical-map"></div>
+
+      <div id="map-status-text" class="map-info-badge">
+        Click "Plot Geofence" to define an autonomous search zone for UAV traversal.
+      </div>
+    </section>
+
+    <!-- RIGHT COLUMN: TELEMETRY & AI TARGET DETECTIONS -->
+    <section class="right-telemetry-col tac-panel">
+      
+      <!-- UAV Telemetry Block -->
+      <div class="telemetry-block">
+        <div class="telem-title">
+          <span>UAV-ALPHA FLIGHT DYNAMICS</span>
+          <span style="color: var(--accent-green);">ARMED</span>
+        </div>
+        <div class="telem-row">
+          <div class="telem-metric">
+            <div id="uav-alt-val" class="metric-val">65m</div>
+            <div class="metric-lbl">ALT AGL</div>
+          </div>
+          <div class="telem-metric">
+            <div id="uav-speed-val" class="metric-val">11.8 m/s</div>
+            <div class="metric-lbl">SPEED</div>
+          </div>
+          <div class="telem-metric">
+            <div id="uav-hdg-val" class="metric-val">045°</div>
+            <div class="metric-lbl">HEADING</div>
+          </div>
+        </div>
+        <div class="telem-row" style="margin-top: 6px;">
+          <div class="telem-metric">
+            <div id="uav-batt-val" class="metric-val">94.0%</div>
+            <div class="battery-bar-wrap">
+              <div id="uav-batt-bar" class="battery-bar-fill" style="width: 94%;"></div>
+            </div>
+            <div class="metric-lbl">BATTERY</div>
+          </div>
+          <div class="telem-metric">
+            <div id="uav-sats-val" class="metric-val">16</div>
+            <div class="metric-lbl">GPS SATS</div>
+          </div>
+          <div class="telem-metric">
+            <div id="uav-rssi-val" class="metric-val">-64 dBm</div>
+            <div class="metric-lbl">TELEMETRY LINK</div>
+          </div>
+        </div>
+        <div style="display: flex; gap: 6px; margin-top: 6px;">
+          <button id="btn-uav-takeoff" class="btn-tac" style="flex: 1; padding: 3px 6px;">TAKEOFF (65m)</button>
+          <button id="btn-uav-hold" class="btn-tac" style="flex: 1; padding: 3px 6px;">POSITION HOLD</button>
+        </div>
+      </div>
+
+      <!-- UGV Rover Telemetry Block -->
+      <div class="telemetry-block">
+        <div class="telem-title">
+          <span>UGV-BRAVO GROUND ROVER</span>
+          <span style="color: var(--accent-green);">AUTONOMOUS</span>
+        </div>
+        <div class="telem-row">
+          <div class="telem-metric">
+            <div id="ugv-speed-val" class="metric-val">3.6 km/h</div>
+            <div class="metric-lbl">VELOCITY</div>
+          </div>
+          <div class="telem-metric">
+            <div id="ugv-obs-val" class="metric-val">4.2m</div>
+            <div class="metric-lbl">OBSTACLE</div>
+          </div>
+          <div class="telem-metric">
+            <div id="ugv-temp-val" class="metric-val">42°C</div>
+            <div class="metric-lbl">MOTOR TEMP</div>
+          </div>
+        </div>
+        <div class="telem-row" style="margin-top: 6px;">
+          <div class="telem-metric" style="grid-column: span 2;">
+            <div id="ugv-batt-val" class="metric-val">89.0%</div>
+            <div class="battery-bar-wrap">
+              <div id="ugv-batt-bar" class="battery-bar-fill" style="width: 89%;"></div>
+            </div>
+            <div class="metric-lbl">ROVER BATTERY</div>
+          </div>
+          <div class="telem-metric">
+            <div id="ugv-hdg-val" class="metric-val">135°</div>
+            <div class="metric-lbl">HEADING</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- AI Target Detections Feed Header -->
+      <div class="panel-header" style="border-top: 1px solid var(--border-cyan); margin-top: auto;">
+        <span>AI TARGET SNAPSHOTS (LORA RECEIVED)</span>
+        <span style="font-size: 0.7rem; color: var(--accent-cyan);">DATABASE SYNC</span>
+      </div>
+
+      <!-- Detections Stream Container -->
+      <div id="detections-stream-list" class="detections-stream panel-body">
+        <!-- Rendered dynamically by detections.js -->
+      </div>
+    </section>
+
+    <!-- BOTTOM ROW: SCENARIOS SIMULATOR & TACTICAL ALERT CONSOLE -->
+    <section class="bottom-sim-row">
+      <!-- Scenario Simulator Controls -->
+      <div class="scenarios-box tac-panel">
+        <div class="panel-header">
+          <span>MISSION SCENARIO SIMULATOR & FAILSAFE TESTING</span>
+          <span style="font-size: 0.7rem; color: var(--accent-amber);">TEST INJECTIONS</span>
+        </div>
+        <div class="panel-body" style="padding: 8px;">
+          <div class="scenario-buttons-grid">
+            <button id="sim-btn-life-sign" class="btn-tac btn-success">
+              ❤️ Simulate Life-Sign (Survivor)
+            </button>
+            <button id="sim-btn-casualty" class="btn-tac btn-danger">
+              ⚠️ Simulate Casualty (Deadbody)
+            </button>
+            <button id="sim-btn-breach" class="btn-tac btn-amber">
+              ⚡ Simulate Geofence Breach
+            </button>
+            <button id="sim-btn-low-battery" class="btn-tac btn-amber">
+              🪫 Low Battery Emergency RTL
+            </button>
+            <button id="sim-btn-jamming" class="btn-tac">
+              📻 Video RF Jamming & Noise
+            </button>
+            <button id="sim-btn-lora-burst" class="btn-tac">
+              📡 LoRa Packet Burst Test
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tactical Alerts Feed -->
+      <div class="alert-console tac-panel">
+        <div class="panel-header">
+          <span>TACTICAL ALERT CONSOLE & LOGS</span>
+          <span style="font-size: 0.7rem; color: var(--accent-cyan);">C2 AUDIT TRAIL</span>
+        </div>
+        <div class="panel-body" style="padding: 6px;">
+          <div id="tactical-alerts-feed" class="alert-feed">
+            <div class="alert-item">
+              <span style="color: #6a82a9;">[SYSTEM BOOT]</span>
+              <strong>OVERLORD C2 INITIALIZED</strong>
+              <span>- Dual UAV/UGV telemetry links online. LoRa bridge active.</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- MODAL VIEWER FOR SNAPSHOT INSPECTION -->
+  <div id="snapshot-modal" class="modal-backdrop">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <span id="modal-target-title">AI TARGET SNAPSHOT INSPECTION</span>
+        <button id="modal-btn-close" style="background: none; border: none; color: #fff; font-size: 1.2rem; cursor: pointer;">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="modal-img-wrap">
+          <img id="modal-snapshot-img" src="" alt="Target Detection Snapshot">
+        </div>
+        <div class="modal-details">
+          <div><strong style="color: var(--text-dim);">DETECTION ID:</strong> <span id="modal-field-id">--</span></div>
+          <div><strong style="color: var(--text-dim);">SOURCE DRONE:</strong> <span id="modal-field-drone">--</span></div>
+          <div><strong style="color: var(--text-dim);">AI CONFIDENCE:</strong> <span id="modal-field-conf">--</span></div>
+          <div><strong style="color: var(--text-dim);">GPS COORDINATES:</strong> <span id="modal-field-coords">--</span></div>
+          <div><strong style="color: var(--text-dim);">LORA SIGNAL:</strong> <span id="modal-field-lora">--</span></div>
+          <div><strong style="color: var(--text-dim);">TACTICAL STATUS:</strong> <span id="modal-field-status">--</span></div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button id="modal-btn-verify" class="btn-tac btn-amber">MARK CONFIRMED</button>
+        <button id="modal-btn-evac" class="btn-tac btn-success">DISPATCH GROUND EXTRACTION</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Leaflet JS -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  
+  <!-- Overlord App Scripts -->
+  <script src="/static/js/map.js"></script>
+  <script src="/static/js/telemetry.js"></script>
+  <script src="/static/js/detections.js"></script>
+  <script src="/static/js/app.js"></script>
+</body>
+</html>
