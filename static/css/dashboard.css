@@ -674,21 +674,485 @@ body::before {
   object-fit: contain;
 }
 
+/* REAL-TIME DETECTION ALERT TOAST CONTAINER & CARDS */
+.alert-toast-container {
+  position: fixed;
+  top: 70px;
+  right: 20px;
+  z-index: 9995;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 380px;
+  max-width: calc(100vw - 40px);
+  pointer-events: none;
+}
+
+.detection-toast {
+  pointer-events: auto;
+  position: relative;
+  background: rgba(10, 16, 28, 0.94);
+  backdrop-filter: blur(10px);
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.7);
+  overflow: hidden;
+  cursor: pointer;
+  display: flex;
+  animation: toastSlideIn 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.detection-toast:hover {
+  transform: translateY(-2px) scale(1.02);
+}
+
+.detection-toast.toast-life {
+  border: 1px solid rgba(0, 255, 157, 0.7);
+  box-shadow: 0 0 20px rgba(0, 255, 157, 0.25);
+}
+
+.detection-toast.toast-casualty {
+  border: 1px solid rgba(255, 51, 102, 0.7);
+  box-shadow: 0 0 20px rgba(255, 51, 102, 0.3);
+}
+
+.toast-side-indicator {
+  width: 6px;
+  flex-shrink: 0;
+}
+
+.toast-life .toast-side-indicator {
+  background: #00ff9d;
+  box-shadow: 0 0 10px #00ff9d;
+}
+
+.toast-casualty .toast-side-indicator {
+  background: #ff3366;
+  box-shadow: 0 0 10px #ff3366;
+}
+
+.toast-inner {
+  flex: 1;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.toast-top-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.toast-tag-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.toast-pulse-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.toast-life .toast-pulse-dot {
+  background: #00ff9d;
+  box-shadow: 0 0 8px #00ff9d;
+  animation: pulse-glow 1.2s infinite;
+}
+
+.toast-casualty .toast-pulse-dot {
+  background: #ff3366;
+  box-shadow: 0 0 8px #ff3366;
+  animation: pulse-glow 1s infinite;
+}
+
+.toast-title {
+  font-family: var(--font-mono);
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+
+.toast-life .toast-title {
+  color: #00ff9d;
+}
+
+.toast-casualty .toast-title {
+  color: #ff3366;
+}
+
+.toast-conf {
+  font-size: 0.68rem;
+  font-family: var(--font-mono);
+  background: rgba(0, 240, 255, 0.15);
+  color: var(--accent-cyan);
+  border: 1px solid rgba(0, 240, 255, 0.3);
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+
+.toast-close-btn {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  font-size: 0.9rem;
+  cursor: pointer;
+  padding: 0 4px;
+  transition: color 0.15s;
+}
+
+.toast-close-btn:hover {
+  color: #fff;
+}
+
+.toast-body-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.toast-thumb-box {
+  width: 80px;
+  height: 60px;
+  border-radius: 4px;
+  overflow: hidden;
+  border: 1px solid var(--border-cyan);
+  background: #000;
+  flex-shrink: 0;
+  position: relative;
+}
+
+.toast-thumb-box img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.toast-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+}
+
+.toast-coords-val {
+  color: #ffb800;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.toast-time-val {
+  color: var(--accent-cyan);
+  font-size: 0.68rem;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.toast-lora-val {
+  color: var(--text-dim);
+  font-size: 0.65rem;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.toast-cta-hint {
+  font-size: 0.66rem;
+  color: #fff;
+  background: rgba(0, 240, 255, 0.15);
+  padding: 2px 6px;
+  border-radius: 3px;
+  text-align: center;
+  margin-top: 4px;
+  letter-spacing: 0.3px;
+}
+
+@keyframes toastSlideIn {
+  from {
+    opacity: 0;
+    transform: translateX(60px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* LEAFLET CUSTOM DETECTION POPUPS */
+.tactical-leaflet-popup .leaflet-popup-content-wrapper {
+  background: rgba(8, 14, 26, 0.96) !important;
+  color: #e2e8f0 !important;
+  border: 1px solid var(--accent-cyan) !important;
+  box-shadow: 0 0 25px rgba(0, 240, 255, 0.4) !important;
+  border-radius: 6px !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+}
+
+.tactical-leaflet-popup .leaflet-popup-content {
+  margin: 0 !important;
+  width: 280px !important;
+  line-height: 1.3 !important;
+}
+
+.tactical-leaflet-popup .leaflet-popup-tip {
+  background: rgba(8, 14, 26, 0.96) !important;
+}
+
+.tactical-popup-box {
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-family: var(--font-mono);
+}
+
+.popup-title-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--border-cyan);
+  padding-bottom: 6px;
+}
+
+.popup-tag {
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+
+.tactical-popup-box.life-sign .popup-tag {
+  color: #00ff9d;
+}
+
+.tactical-popup-box.casualty .popup-tag {
+  color: #ff3366;
+}
+
+.popup-conf {
+  font-size: 0.7rem;
+  background: rgba(0, 240, 255, 0.15);
+  color: var(--accent-cyan);
+  padding: 1px 5px;
+  border-radius: 3px;
+}
+
+.popup-snapshot-wrap {
+  width: 100%;
+  height: 140px;
+  border-radius: 4px;
+  overflow: hidden;
+  position: relative;
+  background: #000;
+  border: 1px solid var(--border-cyan);
+  cursor: pointer;
+}
+
+.popup-snapshot-wrap img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 0.25s ease;
+}
+
+.popup-snapshot-wrap:hover img {
+  transform: scale(1.05);
+}
+
+.popup-click-overlay {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: rgba(0, 0, 0, 0.75);
+  color: #00f0ff;
+  font-size: 0.65rem;
+  text-align: center;
+  padding: 3px 0;
+  letter-spacing: 0.5px;
+}
+
+.popup-data-table {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.72rem;
+  background: rgba(13, 20, 36, 0.6);
+  padding: 6px 8px;
+  border-radius: 4px;
+  border: 1px solid rgba(0, 240, 255, 0.15);
+}
+
+.popup-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.popup-k {
+  color: var(--text-dim);
+  font-size: 0.68rem;
+}
+
+.popup-v {
+  font-weight: 600;
+}
+
+.popup-v.coords {
+  color: #ffb800;
+}
+
+.popup-v.time {
+  color: var(--accent-cyan);
+}
+
+.popup-v.lora {
+  color: #a0aec0;
+  font-size: 0.66rem;
+}
+
+.popup-inspect-btn {
+  width: 100%;
+  padding: 7px 10px;
+  border-radius: 4px;
+  border: none;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  font-weight: 700;
+  cursor: pointer;
+  letter-spacing: 0.5px;
+  transition: filter 0.15s, transform 0.1s;
+}
+
+.popup-inspect-btn.btn-life {
+  background: #00ff9d;
+  color: #051410;
+  box-shadow: 0 0 12px rgba(0, 255, 157, 0.4);
+}
+
+.popup-inspect-btn.btn-cas {
+  background: #ff3366;
+  color: #ffffff;
+  box-shadow: 0 0 12px rgba(255, 51, 102, 0.4);
+}
+
+.popup-inspect-btn:hover {
+  filter: brightness(1.15);
+  transform: translateY(-1px);
+}
+
+/* TACTICAL MAP MARKER PIN */
+.tactical-marker-pin {
+  position: relative;
+  width: 32px;
+  height: 32px;
+  cursor: pointer;
+}
+
+.pin-pulse {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  opacity: 0.4;
+  animation: pinRadarPulse 1.8s infinite;
+}
+
+.tactical-marker-pin.life-sign .pin-pulse {
+  background: #00ff9d;
+}
+
+.tactical-marker-pin.casualty .pin-pulse {
+  background: #ff3366;
+}
+
+.pin-core {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid #ffffff;
+  font-size: 11px;
+}
+
+.tactical-marker-pin.life-sign .pin-core {
+  background: #00ff9d;
+  box-shadow: 0 0 12px #00ff9d;
+}
+
+.tactical-marker-pin.casualty .pin-core {
+  background: #ff3366;
+  box-shadow: 0 0 12px #ff3366;
+}
+
+.pin-label {
+  position: absolute;
+  top: 32px;
+  left: 50%;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 700;
+  padding: 1px 4px;
+  border-radius: 2px;
+  background: rgba(8, 12, 20, 0.85);
+  border: 1px solid #334;
+}
+
+.tactical-marker-pin.life-sign .pin-label {
+  color: #00ff9d;
+  border-color: #00ff9d;
+}
+
+.tactical-marker-pin.casualty .pin-label {
+  color: #ff3366;
+  border-color: #ff3366;
+}
+
+@keyframes pinRadarPulse {
+  0% {
+    transform: scale(0.6);
+    opacity: 0.9;
+  }
+  100% {
+    transform: scale(2.2);
+    opacity: 0;
+  }
+}
+
+/* MODAL ENHANCEMENTS */
 .modal-details {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 8px;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
   font-family: var(--font-mono);
   font-size: 0.75rem;
 }
 
-.modal-footer {
-  padding: 10px 16px;
-  background: rgba(13, 20, 36, 0.8);
-  border-top: 1px solid var(--border-cyan);
+.modal-detail-item {
+  background: rgba(13, 20, 36, 0.6);
+  padding: 8px 10px;
+  border-radius: 4px;
+  border: 1px solid rgba(0, 240, 255, 0.15);
   display: flex;
-  justify-content: flex-end;
-  gap: 10px;
+  justify-content: space-between;
+  align-items: center;
 }
 
 /* Custom Scrollbars */

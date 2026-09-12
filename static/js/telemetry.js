@@ -159,7 +159,7 @@ class TelemetryManager {
   handleAlertEvent(alert) {
     this.playTacticalSound(alert.severity);
 
-    // Add to bottom alert feed console
+    // 1. Add to bottom alert feed console
     const feed = document.getElementById('tactical-alerts-feed');
     if (feed) {
       const item = document.createElement('div');
@@ -175,14 +175,124 @@ class TelemetryManager {
       }
     }
 
-    // If target acquired, place map marker & refresh snapshot gallery
-    if (alert.severity === "TARGET_ACQUIRED" || alert.severity === "WARNING") {
-      if (alert.data && alert.data.lat && alert.data.lon && window.tacticalMap) {
-        window.tacticalMap.addDetectionMarker(alert.data);
+    // 2. Check if this is an AI target detection (Life-Sign or Casualty)
+    const isDetection = (
+      alert.severity === "TARGET_ACQUIRED" ||
+      (alert.data && (alert.data.target_type || alert.data.id || alert.data.detection_id)) ||
+      (alert.title && (alert.title.includes("DETECTED") || alert.title.includes("LIFE") || alert.title.includes("CASUALTY")))
+    );
+
+    if (isDetection && alert.data) {
+      // Pop up on map with marker, centering, and open popup
+      if (window.tacticalMap && alert.data.lat && alert.data.lon) {
+        window.tacticalMap.addDetectionMarker(alert.data, true);
       }
+
+      // Pop up on alerts (interactive tactical toast on dashboard UI)
+      this.showDetectionAlertToast(alert);
+
+      // Refresh snapshot gallery stream
       if (window.detectionManager) {
         window.detectionManager.fetchDetections();
       }
     }
+  }
+
+  showDetectionAlertToast(alert) {
+    const container = document.getElementById('alert-toast-container');
+    if (!container) return;
+
+    const d = alert.data || {};
+    const detId = d.id || d.detection_id || ('det_' + Date.now());
+    const isLifeSign = (
+      (alert.title && alert.title.includes("LIFE")) ||
+      (d.target_type && d.target_type.toUpperCase().includes("LIFE")) ||
+      (d.target_type && d.target_type.toUpperCase().includes("SURVIVOR"))
+    );
+
+    const badgeText = isLifeSign ? "SURVIVOR (LIFE-SIGN)" : "CASUALTY (DEADBODY)";
+    const lat = Number(d.latitude || d.lat || 0);
+    const lon = Number(d.longitude || d.lon || 0);
+    const timeStr = d.timestamp || alert.timestamp || (new Date().toISOString().replace('T', ' ').substring(0, 19) + " UTC");
+    const confPct = Math.round(Number(d.confidence || 0.92) * 100);
+    const imgUrl = d.image_url || `/api/snapshots/${detId}`;
+    const droneId = d.drone_id || alert.drone_id || "UAV-ALPHA";
+    const loraRssi = (d.lora_rssi !== undefined && d.lora_rssi !== null) ? `${Number(d.lora_rssi).toFixed(1)} dBm` : "-72.0 dBm";
+
+    const toast = document.createElement('div');
+    toast.className = `detection-toast ${isLifeSign ? 'toast-life' : 'toast-casualty'}`;
+    toast.id = `toast-${detId}`;
+
+    toast.innerHTML = `
+      <div class="toast-side-indicator"></div>
+      <div class="toast-inner">
+        <div class="toast-top-row">
+          <div class="toast-tag-group">
+            <span class="toast-pulse-dot"></span>
+            <span class="toast-title">${badgeText}</span>
+            <span class="toast-conf">${confPct}% AI</span>
+          </div>
+          <button class="toast-close-btn" title="Dismiss">✕</button>
+        </div>
+        <div class="toast-body-row">
+          <div class="toast-thumb-box">
+            <img src="${imgUrl}" alt="Detection Snapshot" onerror="this.src='/static/img/placeholder.jpg'">
+          </div>
+          <div class="toast-info">
+            <div class="toast-coords-val">
+              <span>📍</span> <span>${lat.toFixed(6)}°N, ${lon.toFixed(6)}°E</span>
+            </div>
+            <div class="toast-time-val">
+              <span>⏱️</span> <span>${timeStr}</span>
+            </div>
+            <div class="toast-lora-val">
+              <span>📡</span> <span>LoRa Link: ${loraRssi} [${droneId}]</span>
+            </div>
+            <div class="toast-cta-hint">
+              👉 CLICK TO LOCATE ON MAP & VIEW SNAPSHOT
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+
+    // Clicking toast focuses marker on map and opens inspection modal
+    toast.addEventListener('click', (e) => {
+      if (e.target.classList.contains('toast-close-btn')) {
+        toast.remove();
+        return;
+      }
+      if (window.tacticalMap && lat && lon) {
+        window.tacticalMap.focusDetection(detId, lat, lon);
+      }
+      if (window.viewSnapshot) {
+        window.viewSnapshot(detId);
+      }
+    });
+
+    const closeBtn = toast.querySelector('.toast-close-btn');
+    if (closeBtn) {
+      closeBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        toast.remove();
+      });
+    }
+
+    container.insertBefore(toast, container.firstChild);
+
+    // Keep max 3 toasts at a time
+    if (container.children.length > 3) {
+      container.removeChild(container.lastChild);
+    }
+
+    // Auto-remove after 12 seconds
+    setTimeout(() => {
+      if (toast.parentNode) {
+        toast.style.opacity = '0';
+        toast.style.transform = 'translateX(60px)';
+        toast.style.transition = 'opacity 0.3s ease, transform 0.3s ease';
+        setTimeout(() => toast.remove(), 350);
+      }
+    }, 12000);
   }
 }

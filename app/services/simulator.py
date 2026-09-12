@@ -300,6 +300,8 @@ class AutonomousDroneSimulator:
             notes="Thermal heat signature confirmed. Heartbeat movement patterns identified."
         )
 
+        ts_str = detection.timestamp.strftime("%Y-%m-%d %H:%M:%S UTC") if detection.timestamp else datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
+
         # Emit High Priority Tactical Alert
         await self.emit_alert(
             severity="TARGET_ACQUIRED",
@@ -307,12 +309,21 @@ class AutonomousDroneSimulator:
             message=f"{telem['drone_id']} localized survivor thermal signature (Confidence: {int(confidence*100)}%). LoRa snapshot transmitted.",
             drone_id=telem["drone_id"],
             data={
+                "id": detection.id,
                 "detection_id": detection.id,
-                "target_type": "LIFE_SIGN",
+                "target_type": "LIFE_SIGN / SURVIVOR",
                 "lat": telem["lat"],
                 "lon": telem["lon"],
+                "latitude": telem["lat"],
+                "longitude": telem["lon"],
+                "altitude": telem.get("altitude", 0.0),
                 "confidence": confidence,
-                "image_url": f"/api/snapshots/{detection.id}"
+                "timestamp": ts_str,
+                "image_url": f"/api/snapshots/{detection.id}",
+                "lora_rssi": lora_service.last_rssi,
+                "lora_snr": lora_service.last_snr,
+                "lora_packets_received": len(packets),
+                "drone_id": telem["drone_id"]
             }
         )
 
@@ -355,18 +366,29 @@ class AutonomousDroneSimulator:
             notes="Zero thermal differential detected. Posture corresponds to fallen casualty."
         )
 
+        ts_str = detection.timestamp.strftime("%Y-%m-%d %H:%M:%S UTC") if detection.timestamp else datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
+
         await self.emit_alert(
             severity="WARNING",
             title="CASUALTY / DEADBODY DETECTED",
             message=f"{telem['drone_id']} flagged fallen casualty at ({telem['lat']:.5f}, {telem['lon']:.5f}). Recorded in database & dispatched over LoRa.",
             drone_id=telem["drone_id"],
             data={
+                "id": detection.id,
                 "detection_id": detection.id,
-                "target_type": "CASUALTY_DEADBODY",
+                "target_type": "CASUALTY / DEADBODY",
                 "lat": telem["lat"],
                 "lon": telem["lon"],
+                "latitude": telem["lat"],
+                "longitude": telem["lon"],
+                "altitude": telem.get("altitude", 0.0),
                 "confidence": confidence,
-                "image_url": f"/api/snapshots/{detection.id}"
+                "timestamp": ts_str,
+                "image_url": f"/api/snapshots/{detection.id}",
+                "lora_rssi": lora_service.last_rssi,
+                "lora_snr": lora_service.last_snr,
+                "lora_packets_received": len(packets),
+                "drone_id": telem["drone_id"]
             }
         )
 

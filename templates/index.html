@@ -308,27 +308,36 @@
     </section>
   </main>
 
+  <!-- REAL-TIME DETECTION ALERT TOAST POPUP CONTAINER -->
+  <div id="alert-toast-container" class="alert-toast-container"></div>
+
   <!-- MODAL VIEWER FOR SNAPSHOT INSPECTION -->
   <div id="snapshot-modal" class="modal-backdrop">
     <div class="modal-dialog">
       <div class="modal-header">
-        <span id="modal-target-title">AI TARGET SNAPSHOT INSPECTION</span>
-        <button id="modal-btn-close" style="background: none; border: none; color: #fff; font-size: 1.2rem; cursor: pointer;">✕</button>
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span class="status-dot red pulse"></span>
+          <span id="modal-target-title">AI TARGET SNAPSHOT INSPECTION</span>
+        </div>
+        <button id="modal-btn-close" style="background: none; border: none; color: #fff; font-size: 1.3rem; cursor: pointer;">✕</button>
       </div>
       <div class="modal-body">
         <div class="modal-img-wrap">
           <img id="modal-snapshot-img" src="" alt="Target Detection Snapshot">
+          <div class="modal-img-crosshair"></div>
         </div>
         <div class="modal-details">
-          <div><strong style="color: var(--text-dim);">DETECTION ID:</strong> <span id="modal-field-id">--</span></div>
-          <div><strong style="color: var(--text-dim);">SOURCE DRONE:</strong> <span id="modal-field-drone">--</span></div>
-          <div><strong style="color: var(--text-dim);">AI CONFIDENCE:</strong> <span id="modal-field-conf">--</span></div>
-          <div><strong style="color: var(--text-dim);">GPS COORDINATES:</strong> <span id="modal-field-coords">--</span></div>
-          <div><strong style="color: var(--text-dim);">LORA SIGNAL:</strong> <span id="modal-field-lora">--</span></div>
-          <div><strong style="color: var(--text-dim);">TACTICAL STATUS:</strong> <span id="modal-field-status">--</span></div>
+          <div class="modal-detail-item"><strong style="color: var(--text-dim);">GPS COORDINATES:</strong> <span id="modal-field-coords" style="color: #ffb800; font-weight: bold;">--</span></div>
+          <div class="modal-detail-item"><strong style="color: var(--text-dim);">TIMESTAMP:</strong> <span id="modal-field-timestamp" style="color: #00f0ff; font-weight: bold;">--</span></div>
+          <div class="modal-detail-item"><strong style="color: var(--text-dim);">AI CONFIDENCE:</strong> <span id="modal-field-conf" style="color: #00ff9d; font-weight: bold;">--</span></div>
+          <div class="modal-detail-item"><strong style="color: var(--text-dim);">SOURCE DRONE:</strong> <span id="modal-field-drone">--</span></div>
+          <div class="modal-detail-item"><strong style="color: var(--text-dim);">LORA UPLINK:</strong> <span id="modal-field-lora">--</span></div>
+          <div class="modal-detail-item"><strong style="color: var(--text-dim);">TACTICAL STATUS:</strong> <span id="modal-field-status">--</span></div>
+          <div class="modal-detail-item" style="grid-column: 1 / -1;"><strong style="color: var(--text-dim);">TARGET ID:</strong> <span id="modal-field-id" style="font-size: 0.7rem; color: #8892b0;">--</span></div>
         </div>
       </div>
       <div class="modal-footer">
+        <button id="modal-btn-locate" class="btn-tac btn-cyan" onclick="window.locateDetectionOnMap()">📍 LOCATE ON MAP</button>
         <button id="modal-btn-verify" class="btn-tac btn-amber">MARK CONFIRMED</button>
         <button id="modal-btn-evac" class="btn-tac btn-success">DISPATCH GROUND EXTRACTION</button>
       </div>

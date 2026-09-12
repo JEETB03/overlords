@@ -31,6 +31,7 @@ class TacticalMap {
     this.activeGeofenceLayer = null;
     this.waypointsLayerGroup = null;
     this.detectionsLayerGroup = null;
+    this.detectionMarkers = {};
 
     this.currentPolygon = [];
     this.currentUavWaypoints = [];
@@ -104,6 +105,9 @@ class TacticalMap {
 
     // Load active geofence if already exists on server
     this.fetchActiveGeofence();
+
+    // Preload recorded detections onto map
+    this.loadExistingDetections();
   }
 
   initDroneMarkers() {
@@ -471,31 +475,134 @@ class TacticalMap {
     }
   }
 
-  addDetectionMarker(detection) {
-    const isLifeSign = detection.target_type && detection.target_type.includes("LIFE");
+  async loadExistingDetections() {
+    try {
+      const resp = await fetch('/api/detections?limit=50');
+      const list = await resp.json();
+      if (Array.isArray(list)) {
+        list.forEach(det => this.addDetectionMarker(det, false));
+      }
+    } catch (e) {
+      console.warn("Could not preload existing detections on map:", e);
+    }
+  }
+
+  addDetectionMarker(detection, shouldFocus = false) {
+    if (!detection) return;
+    const detId = detection.id || detection.detection_id || ('det_' + Date.now());
+    const lat = Number(detection.latitude || detection.lat || 0);
+    const lon = Number(detection.longitude || detection.lon || 0);
+    if (!lat || !lon) return;
+
+    // Check if marker already exists for this detection
+    if (this.detectionMarkers[detId]) {
+      const existing = this.detectionMarkers[detId].marker;
+      if (shouldFocus) {
+        this.map.flyTo([lat, lon], Math.max(this.map.getZoom(), 17), { animate: true, duration: 0.9 });
+        setTimeout(() => existing.openPopup(), 400);
+      }
+      return;
+    }
+
+    const isLifeSign = detection.target_type && (
+      detection.target_type.toUpperCase().includes("LIFE") || 
+      detection.target_type.toUpperCase().includes("SURVIVOR")
+    );
     const color = isLifeSign ? "#00ff9d" : "#ff3366";
-    const label = isLifeSign ? "SURVIVOR" : "CASUALTY";
+    const label = isLifeSign ? "SURVIVOR (LIFE-SIGN)" : "CASUALTY (DEADBODY)";
+    const confPct = Math.round(Number(detection.confidence || 0.9) * 100);
+    const timeStr = detection.timestamp || (new Date().toISOString().replace('T', ' ').substring(0, 19) + " UTC");
+    const droneId = detection.drone_id || "UAV-ALPHA";
+    const loraRssi = (detection.lora_rssi !== undefined && detection.lora_rssi !== null) ? `${Number(detection.lora_rssi).toFixed(1)} dBm` : "-72.0 dBm";
+    const loraPackets = detection.lora_packets_received || detection.lora_packets || 8;
+    const imgUrl = detection.image_url || `/api/snapshots/${detId}`;
 
     const pulseIcon = L.divIcon({
-      className: 'detection-marker-pulse',
+      className: 'tactical-marker-pin-wrap',
       html: `
-        <div style="position: relative;">
-          <div style="width: 22px; height: 22px; border-radius: 50%; background: ${color}; opacity: 0.3; animation: pulse-glow 1.5s infinite;"></div>
-          <div style="position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 50%; background: ${color}; border: 2px solid #ffffff; box-shadow: 0 0 10px ${color};"></div>
+        <div class="tactical-marker-pin ${isLifeSign ? 'life-sign' : 'casualty'}">
+          <div class="pin-pulse"></div>
+          <div class="pin-core">${isLifeSign ? '👤' : '⚠️'}</div>
+          <div class="pin-label">${isLifeSign ? 'LIFE-SIGN' : 'CASUALTY'}</div>
         </div>
       `,
-      iconSize: [22, 22],
-      iconAnchor: [11, 11]
+      iconSize: [32, 45],
+      iconAnchor: [16, 20]
     });
 
-    const marker = L.marker([detection.lat, detection.lon], { icon: pulseIcon });
-    marker.bindPopup(`
-      <div style="font-family: Orbitron; font-size: 11px; color: ${color};">
-        <strong>${label} DETECTED</strong><br>
-        <span style="color: #ccc; font-size: 9px;">CONFIDENCE: ${(detection.confidence*100).toFixed(0)}%</span><br>
-        <button onclick="window.viewSnapshot('${detection.detection_id}')" style="background: ${color}; color: #000; border: none; padding: 2px 6px; border-radius: 2px; font-weight: bold; margin-top: 4px; cursor: pointer;">VIEW SNAPSHOT</button>
+    const marker = L.marker([lat, lon], { icon: pulseIcon });
+
+    const popupHtml = `
+      <div class="tactical-popup-box ${isLifeSign ? 'life-sign' : 'casualty'}">
+        <div class="popup-title-bar">
+          <span class="popup-tag">${label}</span>
+          <span class="popup-conf">${confPct}% CONF</span>
+        </div>
+        <div class="popup-snapshot-wrap" onclick="window.viewSnapshot('${detId}')" title="Click to view high-res picture">
+          <img src="${imgUrl}" alt="Detection Snapshot" onerror="this.src='/static/img/placeholder.jpg'">
+          <div class="popup-click-overlay">🔍 CLICK TO INSPECT PICTURE</div>
+        </div>
+        <div class="popup-data-table">
+          <div class="popup-row">
+            <span class="popup-k">LAT-LONG:</span>
+            <span class="popup-v coords">${lat.toFixed(6)}°N, ${lon.toFixed(6)}°E</span>
+          </div>
+          <div class="popup-row">
+            <span class="popup-k">TIMESTAMP:</span>
+            <span class="popup-v time">${timeStr}</span>
+          </div>
+          <div class="popup-row">
+            <span class="popup-k">LORA LINK:</span>
+            <span class="popup-v lora">${loraRssi} (${loraPackets} pkts)</span>
+          </div>
+          <div class="popup-row">
+            <span class="popup-k">PLATFORM:</span>
+            <span class="popup-v">${droneId}</span>
+          </div>
+        </div>
+        <button class="popup-inspect-btn ${isLifeSign ? 'btn-life' : 'btn-cas'}" onclick="window.viewSnapshot('${detId}')">
+          INSPECT PICTURE & COORDS
+        </button>
       </div>
-    `);
+    `;
+
+    marker.bindPopup(popupHtml, {
+      maxWidth: 290,
+      className: 'tactical-leaflet-popup',
+      autoPan: true
+    });
+
+    marker.on('click', () => {
+      marker.openPopup();
+    });
+
     this.detectionsLayerGroup.addLayer(marker);
+    this.detectionMarkers[detId] = { marker, lat, lon, data: detection };
+
+    if (shouldFocus) {
+      this.map.flyTo([lat, lon], Math.max(this.map.getZoom(), 17), {
+        animate: true,
+        duration: 1.0
+      });
+      setTimeout(() => {
+        marker.openPopup();
+      }, 450);
+    }
+  }
+
+  focusDetection(detId, lat, lon) {
+    if (detId && this.detectionMarkers[detId]) {
+      const entry = this.detectionMarkers[detId];
+      this.map.flyTo([entry.lat, entry.lon], Math.max(this.map.getZoom(), 17), {
+        animate: true,
+        duration: 0.9
+      });
+      setTimeout(() => entry.marker.openPopup(), 400);
+    } else if (lat && lon) {
+      this.map.flyTo([lat, lon], Math.max(this.map.getZoom(), 17), {
+        animate: true,
+        duration: 0.9
+      });
+    }
   }
 }

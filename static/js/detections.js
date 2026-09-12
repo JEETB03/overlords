@@ -65,52 +65,96 @@ class DetectionManager {
   }
 
   async openModal(detectionId) {
-    let d = this.detections.find(x => x.id === detectionId);
+    let d = this.detections.find(x => x.id === detectionId || x.detection_id === detectionId);
     if (!d) {
       try {
-        const resp = await fetch(`/api/detections?limit=100`);
-        const all = await resp.json();
-        d = all.find(x => x.id === detectionId);
-      } catch (e) {}
+        const resp = await fetch(`/api/detections/${detectionId}`);
+        if (resp.ok) {
+          d = await resp.json();
+        } else {
+          const listResp = await fetch(`/api/detections?limit=100`);
+          const all = await listResp.json();
+          d = all.find(x => x.id === detectionId || x.detection_id === detectionId);
+        }
+      } catch (e) {
+        console.error("Failed to load detection details:", e);
+      }
     }
     if (!d) return;
 
     this.currentModalDetection = d;
-    const isLifeSign = d.target_type && d.target_type.includes("LIFE");
+    const isLifeSign = d.target_type && (
+      d.target_type.toUpperCase().includes("LIFE") || 
+      d.target_type.toUpperCase().includes("SURVIVOR")
+    );
 
-    document.getElementById('modal-target-title').innerText = isLifeSign ? "SURVIVOR LIFE-SIGN SNAPSHOT" : "CASUALTY TARGET SNAPSHOT";
-    document.getElementById('modal-target-title').style.color = isLifeSign ? "#00ff9d" : "#ff3366";
+    const titleEl = document.getElementById('modal-target-title');
+    if (titleEl) {
+      titleEl.innerText = isLifeSign ? "SURVIVOR LIFE-SIGN SNAPSHOT ACQUIRED" : "CASUALTY TARGET SNAPSHOT RECORDED";
+      titleEl.style.color = isLifeSign ? "#00ff9d" : "#ff3366";
+    }
 
-    // Set image
+    // Set high-resolution snapshot image
     const imgEl = document.getElementById('modal-snapshot-img');
-    imgEl.src = `/api/snapshots/${d.id}`;
+    if (imgEl) {
+      imgEl.src = `/api/snapshots/${d.id || d.detection_id}`;
+    }
 
-    // Fill metadata
-    document.getElementById('modal-field-id').innerText = d.id.substring(0, 8);
-    document.getElementById('modal-field-drone').innerText = d.drone_id;
-    document.getElementById('modal-field-conf').innerText = `${(d.confidence * 100).toFixed(1)}%`;
-    document.getElementById('modal-field-coords').innerText = `${d.latitude.toFixed(6)}°N, ${d.longitude.toFixed(6)}°E`;
-    document.getElementById('modal-field-lora').innerText = `${d.lora_rssi} dBm (SNR: ${d.lora_snr}dB)`;
-    document.getElementById('modal-field-status').innerText = d.status;
+    // Fill metadata fields
+    const lat = Number(d.latitude || d.lat || 0);
+    const lon = Number(d.longitude || d.lon || 0);
+    const timeStr = d.timestamp || (new Date().toISOString().replace('T', ' ').substring(0, 19) + " UTC");
+
+    if (document.getElementById('modal-field-id')) {
+      document.getElementById('modal-field-id').innerText = d.id || d.detection_id;
+    }
+    if (document.getElementById('modal-field-drone')) {
+      document.getElementById('modal-field-drone').innerText = d.drone_id || "UAV-ALPHA";
+    }
+    if (document.getElementById('modal-field-conf')) {
+      document.getElementById('modal-field-conf').innerText = `${((d.confidence || 0.9) * 100).toFixed(1)}%`;
+    }
+    if (document.getElementById('modal-field-coords')) {
+      document.getElementById('modal-field-coords').innerText = `${lat.toFixed(6)}°N, ${lon.toFixed(6)}°E`;
+    }
+    if (document.getElementById('modal-field-timestamp')) {
+      document.getElementById('modal-field-timestamp').innerText = timeStr;
+    }
+    if (document.getElementById('modal-field-lora')) {
+      const r = d.lora_rssi !== undefined ? `${Number(d.lora_rssi).toFixed(1)} dBm` : "-72.0 dBm";
+      const s = d.lora_snr !== undefined ? `${Number(d.lora_snr).toFixed(1)} dB` : "9.5 dB";
+      document.getElementById('modal-field-lora').innerText = `${r} (SNR: ${s})`;
+    }
+    if (document.getElementById('modal-field-status')) {
+      document.getElementById('modal-field-status').innerText = d.status || "UNCONFIRMED";
+    }
 
     // Show modal
-    document.getElementById('snapshot-modal').style.display = 'flex';
+    const modal = document.getElementById('snapshot-modal');
+    if (modal) {
+      modal.style.display = 'flex';
+    }
   }
 
   closeModal() {
-    document.getElementById('snapshot-modal').style.display = 'none';
+    const modal = document.getElementById('snapshot-modal');
+    if (modal) {
+      modal.style.display = 'none';
+    }
     this.currentModalDetection = null;
   }
 
   async verifyTarget() {
     if (!this.currentModalDetection) return;
     try {
-      await fetch(`/api/detections/${this.currentModalDetection.id}/status`, {
+      const id = this.currentModalDetection.id || this.currentModalDetection.detection_id;
+      await fetch(`/api/detections/${id}/status`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: "VERIFIED_CONFIRMED" })
       });
-      document.getElementById('modal-field-status').innerText = "VERIFIED_CONFIRMED";
+      const stEl = document.getElementById('modal-field-status');
+      if (stEl) stEl.innerText = "VERIFIED_CONFIRMED";
       this.fetchDetections();
     } catch (e) {
       console.error(e);
@@ -120,14 +164,16 @@ class DetectionManager {
   async dispatchEvac() {
     if (!this.currentModalDetection) return;
     try {
-      await fetch(`/api/detections/${this.currentModalDetection.id}/status`, {
+      const id = this.currentModalDetection.id || this.currentModalDetection.detection_id;
+      await fetch(`/api/detections/${id}/status`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: "EVAC_DISPATCHED", notes: "Ground extraction unit en route" })
       });
-      document.getElementById('modal-field-status').innerText = "EVAC_DISPATCHED";
+      const stEl = document.getElementById('modal-field-status');
+      if (stEl) stEl.innerText = "EVAC_DISPATCHED";
       this.fetchDetections();
-      alert("Ground Quick Reaction Force & Evac unit alerted with coordinates!");
+      alert("Tactical QRF & Evacuation team dispatched with target coordinates!");
     } catch (e) {
       console.error(e);
     }
@@ -138,5 +184,18 @@ class DetectionManager {
 window.viewSnapshot = function(id) {
   if (window.detectionManager) {
     window.detectionManager.openModal(id);
+  }
+};
+
+window.locateDetectionOnMap = function() {
+  if (window.detectionManager && window.detectionManager.currentModalDetection) {
+    const d = window.detectionManager.currentModalDetection;
+    const lat = Number(d.latitude || d.lat || 0);
+    const lon = Number(d.longitude || d.lon || 0);
+    const id = d.id || d.detection_id;
+    window.detectionManager.closeModal();
+    if (window.tacticalMap && lat && lon) {
+      window.tacticalMap.focusDetection(id, lat, lon);
+    }
   }
 };

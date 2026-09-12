@@ -27,15 +27,19 @@ async def list_detections(limit: int = 50):
     records = await get_all_detections(limit)
     out = []
     for r in records:
+        ts_str = r.timestamp.strftime("%Y-%m-%d %H:%M:%S UTC") if r.timestamp else ""
         out.append({
             "id": r.id,
-            "timestamp": r.timestamp.isoformat() if r.timestamp else "",
+            "detection_id": r.id,
+            "timestamp": ts_str,
             "drone_id": r.drone_id,
             "drone_type": r.drone_type,
             "target_type": r.target_type,
             "confidence": r.confidence,
             "latitude": r.latitude,
             "longitude": r.longitude,
+            "lat": r.latitude,
+            "lon": r.longitude,
             "altitude": r.altitude,
             "image_url": f"/api/snapshots/{r.id}" if r.image_filename else None,
             "thumbnail_b64": r.thumbnail_b64[:100] + "..." if r.thumbnail_b64 else None,
@@ -46,6 +50,34 @@ async def list_detections(limit: int = 50):
             "notes": r.notes
         })
     return out
+
+@router.get("/{detection_id}")
+async def get_detection(detection_id: str):
+    """Retrieves single detection details with coordinates, timestamp, and snapshot."""
+    r = await get_detection_by_id(detection_id)
+    if not r:
+        raise HTTPException(status_code=404, detail="Detection not found")
+    ts_str = r.timestamp.strftime("%Y-%m-%d %H:%M:%S UTC") if r.timestamp else ""
+    return {
+        "id": r.id,
+        "detection_id": r.id,
+        "timestamp": ts_str,
+        "drone_id": r.drone_id,
+        "drone_type": r.drone_type,
+        "target_type": r.target_type,
+        "confidence": r.confidence,
+        "latitude": r.latitude,
+        "longitude": r.longitude,
+        "lat": r.latitude,
+        "lon": r.longitude,
+        "altitude": r.altitude,
+        "image_url": f"/api/snapshots/{r.id}" if r.image_filename else None,
+        "lora_rssi": r.lora_rssi,
+        "lora_snr": r.lora_snr,
+        "lora_packets_received": r.lora_packets_received,
+        "status": r.status,
+        "notes": r.notes
+    }
 
 @router.post("")
 async def create_detection(req: DetectionCreate):
@@ -78,19 +110,28 @@ async def create_detection(req: DetectionCreate):
     )
 
     # Broadcast alert
-    severity = "TARGET_ACQUIRED" if "LIFE" in req.target_type else "WARNING"
+    severity = "TARGET_ACQUIRED" if "LIFE" in req.target_type.upper() else "WARNING"
+    ts_str = record.timestamp.strftime("%Y-%m-%d %H:%M:%S UTC") if record.timestamp else ""
     await simulator.emit_alert(
         severity=severity,
         title=f"AI DETECTION: {req.target_type}",
         message=f"{req.drone_id} acquired {req.target_type} ({int(req.confidence*100)}% conf) at ({req.lat:.5f}, {req.lon:.5f})",
         drone_id=req.drone_id,
         data={
+            "id": record.id,
             "detection_id": record.id,
             "target_type": req.target_type,
             "lat": req.lat,
             "lon": req.lon,
+            "latitude": req.lat,
+            "longitude": req.lon,
+            "altitude": req.altitude,
             "confidence": req.confidence,
-            "image_url": f"/api/snapshots/{record.id}"
+            "timestamp": ts_str,
+            "image_url": f"/api/snapshots/{record.id}",
+            "lora_rssi": req.lora_rssi,
+            "lora_snr": req.lora_snr,
+            "drone_id": req.drone_id
         }
     )
 
