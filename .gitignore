@@ -50,7 +50,11 @@ storage/snapshots/*
 Thumbs.db
 
 # ML Pipeline
-ml/data/
+ml/data/raw/
+ml/data/processed/
+ml/data/dedup_review/
+ml/configs/data.yaml
+runs/
 *.pt
 *.pth
 ml/__pycache__/
